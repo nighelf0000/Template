@@ -85,9 +85,8 @@ public class WordController {
             return ResponseEntity.notFound().build();
         }
         try {
-            // 获取段落底色信息
-            PreviewResultDTO previewResult = wordParseService.preview(id);
-            List<ParagraphItemDTO> paragraphs = previewResult.getParagraphs();
+            // 获取段落底色信息（使用轻量方法，避免 preview() 中 PDF 位置计算等额外开销）
+            List<ParagraphItemDTO> paragraphs = wordParseService.getParagraphBackgrounds(id);
 
             // 调用带底色的 PDF 生成
             byte[] pdfBytes = pdfConversionService.convertToPdfWithBackground(

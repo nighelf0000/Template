@@ -20,6 +20,7 @@
     "axios": "^1.16.0",
     "element-plus": "^2.13.7",
     "pdfjs-dist": "4.9.155",
+    "puppeteer-core": "^24.43.0",
     "vue-router": "^4.6.4"
   }
 }

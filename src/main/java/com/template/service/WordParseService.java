@@ -380,17 +380,87 @@ public class WordParseService {
     }
 
     /**
-     * 确定规则底色：优先使用 highlightColor，否则按 ruleId HSL 自动生成。
+     * 确定规则底色：优先使用 highlightColor（含格式规范化），
+     * 降级：rule 为 null 但 ruleId 有值时从数据库查询；
+     * 最终按 ruleId HSL 自动生成。
      */
     private String determineBackgroundColor(Long ruleId, TemplateRule rule) {
         if (rule != null && rule.getHighlightColor() != null && !rule.getHighlightColor().isEmpty()) {
-            return rule.getHighlightColor();
+            String color = rule.getHighlightColor();
+            // 规范化十六进制颜色：确保有 # 前缀
+            if (color.matches("[0-9a-fA-F]{6}")) {
+                color = "#" + color;
+            }
+            return color;
+        }
+        // 降级：rule 为 null 但 ruleId 有值，尝试从数据库查询
+        if (rule == null && ruleId != null) {
+            TemplateRule dbRule = templateRuleMapper.selectById(ruleId);
+            if (dbRule != null && dbRule.getHighlightColor() != null && !dbRule.getHighlightColor().isEmpty()) {
+                String color = dbRule.getHighlightColor();
+                if (color.matches("[0-9a-fA-F]{6}")) {
+                    color = "#" + color;
+                }
+                return color;
+            }
         }
         if (ruleId != null) {
             int hue = (int) ((ruleId * 137.508) % 360);
             return String.format("hsl(%d, 60%%, 85%%)", hue);
         }
         return null;
+    }
+
+    /**
+     * 轻量方法：仅返回段落底色列表，用于 PDF 预览，
+     * 避免 preview() 中 PDF 位置计算、样式提取等额外开销。
+     */
+    public List<ParagraphItemDTO> getParagraphBackgrounds(Long fileId) {
+        UploadFile uf = uploadFileMapper.selectById(fileId);
+        if (uf == null) {
+            throw new RuntimeException("文件不存在");
+        }
+        if (uf.getTemplateId() == null) {
+            throw new RuntimeException("未指定模板");
+        }
+        if (uf.getParsedJson() == null) {
+            throw new RuntimeException("文件尚未解析，请先执行解析操作");
+        }
+
+        // 查询规则列表
+        List<TemplateRule> rules = templateRuleMapper.selectList(
+                new LambdaQueryWrapper<TemplateRule>().eq(TemplateRule::getTemplateId, uf.getTemplateId()));
+        Map<Long, TemplateRule> ruleMap = rules.stream()
+                .collect(Collectors.toMap(TemplateRule::getId, r -> r));
+
+        // 反序列化匹配数据
+        List<RecognitionEngine.ParagraphMatch> matches;
+        try {
+            matches = objectMapper.readValue(
+                    uf.getParsedJson(),
+                    objectMapper.getTypeFactory().constructCollectionType(List.class, RecognitionEngine.ParagraphMatch.class));
+        } catch (Exception e) {
+            log.error("parsedJson 反序列化失败: fileId={}", fileId, e);
+            throw new RuntimeException("解析数据反序列化失败", e);
+        }
+
+        // 仅构建段落底色信息（index + backgroundColor）
+        List<ParagraphItemDTO> items = new ArrayList<>();
+        for (RecognitionEngine.ParagraphMatch match : matches) {
+            ParagraphItemDTO item = new ParagraphItemDTO();
+            item.setIndex(match.getIndex());
+
+            TemplateRule rule = match.getRuleId() != null ? ruleMap.get(match.getRuleId()) : null;
+            if (match.getMatchedType() == RecognitionEngine.MatchedType.UNKNOWN) {
+                item.setBackgroundColor(null);
+            } else {
+                item.setBackgroundColor(determineBackgroundColor(match.getRuleId(), rule));
+            }
+
+            items.add(item);
+        }
+
+        return items;
     }
 
     @Transactional

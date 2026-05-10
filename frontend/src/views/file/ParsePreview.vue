@@ -48,10 +48,8 @@
         <!-- PDF 全屏视口 -->
         <div class="pdf-viewport" ref="pdfViewportRef">
           <div class="pdf-page-container">
-            <!-- PDF Canvas（底层） -->
+            <!-- PDF Canvas -->
             <canvas ref="pdfCanvasRef" class="pdf-canvas" />
-            <!-- 高亮叠加 Canvas（顶层） -->
-            <canvas ref="highlightCanvasRef" class="highlight-canvas" />
           </div>
         </div>
 
@@ -100,11 +98,40 @@
 
         <!-- 段落调整区域 -->
         <h3 class="legend-title">段落调整</h3>
+        <!-- 搜索栏 -->
+        <div class="search-bar">
+          <el-input
+            v-model="searchKeyword"
+            placeholder="搜索段落内容..."
+            size="small"
+            clearable
+            @keyup.enter="performSearch"
+            @clear="searchResults = []; hasSearched = false; currentSearchIdx = 0"
+          >
+            <template #append>
+              <el-button :icon="Search" @click="performSearch" />
+            </template>
+          </el-input>
+        </div>
+
+        <!-- 搜索结果导航 -->
+        <div v-if="hasSearched" class="search-nav">
+          <template v-if="searchResults.length > 0">
+            <span class="search-nav-info">{{ currentSearchIdx + 1 }} / {{ searchResults.length }}</span>
+            <el-button size="small" :icon="ArrowUp" @click="prevMatch" :disabled="searchResults.length <= 1" />
+            <el-button size="small" :icon="ArrowDown" @click="nextMatch" :disabled="searchResults.length <= 1" />
+          </template>
+          <span v-else class="search-no-result">无匹配结果</span>
+        </div>
+
         <div class="adjust-section">
           <div
             v-for="(para, index) in parseResult.paragraphs"
             :key="index"
+            v-memo="[para.ruleId, para.matchedType, expandedAdjustItems[index], hasSearched, searchResults.includes(index), currentSearchIdx === index]"
+            :data-para-index="index"
             class="adjust-item"
+            :class="{ 'is-search-match': hasSearched && searchResults.includes(index), 'is-current-match': hasSearched && searchResults.length > 0 && searchResults[currentSearchIdx] === index }"
           >
             <div
               class="adjust-header"
@@ -114,17 +141,18 @@
               <el-tag size="small" :type="matchTypeTag(para.matchedType)" style="flex-shrink: 0">
                 {{ para.matchedType || '未匹配' }}
               </el-tag>
+              <el-tooltip v-if="para.ruleName" :content="para.ruleName" placement="top" :show-after="300">
+                <span class="adjust-rulename">{{ para.ruleName }}</span>
+              </el-tooltip>
               <el-icon class="adjust-arrow" :class="{ expanded: expandedAdjustItems[index] }">
                 <ArrowDown />
               </el-icon>
             </div>
-            <el-tooltip v-if="paragraphStylePreview(para)" :content="para.text" placement="top" :show-after="300">
-              <div class="adjust-preview" :style="paragraphInlineStyle(para.style)">
-                {{ para.text?.substring(0, 60) }}{{ para.text?.length > 60 ? '...' : '' }}
-              </div>
+            <el-tooltip :content="para.text" placement="top" :show-after="300">
+              <div class="adjust-preview" :style="paragraphStylePreview(para) ? paragraphInlineStyle(para.style) : {}" v-html="highlightText((para.text || '').substring(0, 60) + (para.text && para.text.length > 60 ? '...' : ''), searchKeyword)"></div>
             </el-tooltip>
             <el-collapse-transition>
-              <div v-show="expandedAdjustItems[index]" class="adjust-body">
+              <div v-if="expandedAdjustItems[index]" class="adjust-body">
                 <el-select
                   v-model="para.ruleId"
                   placeholder="选择样式规则"
@@ -150,10 +178,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, shallowRef, markRaw, onMounted, onUnmounted, reactive, nextTick, watch } from 'vue'
+import { ref, shallowRef, markRaw, onMounted, onUnmounted, shallowReactive, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowDown } from '@element-plus/icons-vue'
+import { ArrowDown, Search, ArrowUp } from '@element-plus/icons-vue'
 import { getFileList, getPreview, saveAdjust } from '@/api/file'
 import { getRuleList } from '@/api/template'
 import type { ParseResult, UploadFile, ParagraphItem, TemplateRule } from '@/types/api'
@@ -180,10 +208,6 @@ const currentPage = ref(1)
 const totalPages = ref(0)
 const scale = ref(2.0)
 
-// 所有 PDF 页面扁平化文本项（用于基于段落位置的 highlight 匹配）
-const allPagesTextItems = ref<any[]>([])
-const allPagesTotalChars = ref(0)
-
 // 生命周期守卫与防重入
 const isMounted = ref(true)
 const reloadingPdf = ref(false)
@@ -194,11 +218,14 @@ const autoFit = ref(true)
 
 // Canvas 引用
 const pdfCanvasRef = ref<HTMLCanvasElement | null>(null)
-const highlightCanvasRef = ref<HTMLCanvasElement | null>(null)
 const pdfViewportRef = ref<HTMLElement | null>(null)
 
 // 段落调整折叠状态
-const expandedAdjustItems = reactive<Record<number, boolean>>({})
+const expandedAdjustItems = shallowReactive<Record<number, boolean>>({})
+const searchKeyword = ref('')
+const searchResults = ref<number[]>([])
+const currentSearchIdx = ref(0)
+const hasSearched = ref(false)
 
 function matchTypeTag(type: string | undefined): string {
   const map: Record<string, string> = {
@@ -263,6 +290,75 @@ function toggleAdjustItem(index: number) {
   expandedAdjustItems[index] = !expandedAdjustItems[index]
 }
 
+function performSearch() {
+  const keyword = searchKeyword.value.trim()
+  if (!keyword || !parseResult.value) {
+    searchResults.value = []
+    hasSearched.value = false
+    currentSearchIdx.value = 0
+    return
+  }
+  hasSearched.value = true
+  const lowerKeyword = keyword.toLowerCase()
+  const results: number[] = []
+  parseResult.value.paragraphs.forEach((para, idx) => {
+    if (para.text && para.text.toLowerCase().includes(lowerKeyword)) {
+      results.push(idx)
+    }
+  })
+  searchResults.value = results
+  if (results.length > 0) {
+    currentSearchIdx.value = 0
+    const targetIdx = results[0]
+    expandedAdjustItems[targetIdx] = true
+    nextTick(() => {
+      const el = document.querySelector(`[data-para-index="${targetIdx}"]`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    })
+  }
+}
+
+function nextMatch() {
+  if (searchResults.value.length === 0) return
+  const prev = currentSearchIdx.value
+  const next = (prev + 1) % searchResults.value.length
+  currentSearchIdx.value = next
+  scrollToMatch(searchResults.value[next])
+}
+
+function prevMatch() {
+  if (searchResults.value.length === 0) return
+  const prev = currentSearchIdx.value
+  const next = (prev - 1 + searchResults.value.length) % searchResults.value.length
+  currentSearchIdx.value = next
+  scrollToMatch(searchResults.value[next])
+}
+
+function scrollToMatch(idx: number) {
+  expandedAdjustItems[idx] = true
+  nextTick(() => {
+    const el = document.querySelector(`[data-para-index="${idx}"]`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  })
+}
+
+function escapeHtml(text: string): string {
+  const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
+  return text.replace(/[&<>"']/g, (c) => map[c])
+}
+
+function highlightText(text: string, keyword: string): string {
+  if (!text || !keyword) return escapeHtml(text || '')
+  const escaped = escapeHtml(text)
+  const escapedKeyword = escapeHtml(keyword)
+  const regex = new RegExp(escapedKeyword.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi')
+  return escaped.replace(regex, (match) => `<span class="search-highlight">${match}</span>`)
+}
+
 async function loadFileOptions() {
   try {
     const res = await getFileList({ page: 1, size: 999 })
@@ -303,10 +399,6 @@ async function loadPdf() {
     pdfDoc.value = null
   }
 
-  // 重置跨页文本缓存
-  allPagesTextItems.value = []
-  allPagesTotalChars.value = 0
-
   try {
     const url = parseResult.value.pdfUrl
     pdfDoc.value = await pdfjsLib.getDocument(url).promise
@@ -315,13 +407,6 @@ async function loadPdf() {
     totalPages.value = pdfDoc.value.numPages
     currentPage.value = 1
     autoFit.value = true
-
-    // 预获取所有页面文本内容（用于基于段落位置的高亮匹配）
-    try {
-      await prefetchAllPageTexts()
-    } catch (e) {
-      console.warn('预获取文本内容失败（高亮功能将不可用）:', e)
-    }
 
     // 渲染当前页
     await renderPage(currentPage.value)
@@ -361,11 +446,6 @@ async function renderPage(pageNum: number) {
   canvas.width = Math.ceil(viewport.width)
   canvas.height = Math.ceil(viewport.height)
 
-  if (highlightCanvasRef.value) {
-    highlightCanvasRef.value.width = canvas.width
-    highlightCanvasRef.value.height = canvas.height
-  }
-
   const context = canvas.getContext('2d')
   if (!context) return
 
@@ -374,148 +454,6 @@ async function renderPage(pageNum: number) {
   } catch (e) {
     console.error(`渲染第 ${pageNum} 页 Canvas 失败:`, e)
     return
-  }
-
-  // 渲染高亮
-  await renderHighlights()
-}
-
-async function prefetchAllPageTexts() {
-  if (!pdfDoc.value) return
-  const items: any[] = []
-  let totalChars = 0
-  for (let p = 1; p <= pdfDoc.value.numPages; p++) {
-    if (!isMounted.value) return
-    const page = await pdfDoc.value.getPage(p)
-    if (!isMounted.value) { page.cleanup(); return }
-    try {
-      const tc = await page.getTextContent()
-      for (const item of tc.items as any[]) {
-        items.push({
-          str: item.str || '',
-          transform: item.transform,
-          width: item.width,
-          height: item.height,
-          pageNum: p
-        })
-        totalChars += (item.str || '').length
-      }
-    } finally {
-      page.cleanup()
-    }
-  }
-  allPagesTextItems.value = items
-  allPagesTotalChars.value = totalChars
-}
-
-function binarySearchItemIndex(arr: number[], target: number): number {
-  let lo = 0, hi = arr.length - 1
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1
-    if (arr[mid] < target) lo = mid + 1
-    else hi = mid
-  }
-  return lo
-}
-
-/** 查找第一个 arr[i] > target 的索引，用于起始项搜索时跳过边界处前一段的文本项 */
-function binarySearchItemIndexGT(arr: number[], target: number): number {
-  let lo = 0, hi = arr.length - 1
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1
-    if (arr[mid] <= target) lo = mid + 1
-    else hi = mid
-  }
-  return lo
-}
-
-async function renderHighlights() {
-  const canvas = highlightCanvasRef.value
-  if (!canvas || !currentPageObj.value || !parseResult.value) return
-
-  const context = canvas.getContext('2d')
-  if (!context) return
-
-  context.clearRect(0, 0, canvas.width, canvas.height)
-
-  const allItems = allPagesTextItems.value
-  if (allItems.length === 0 || allPagesTotalChars.value === 0) return
-
-  const effectiveScale = autoFit.value ? calcFitScale() : scale.value
-  const viewport = currentPageObj.value.getViewport({ scale: effectiveScale })
-
-  const allParagraphs = parseResult.value.paragraphs
-
-  // 使用后端记录的全文字符偏移（未被截断），取最后一段的 endOffset 作为总长度
-  const docTotalLen = allParagraphs.length > 0
-    ? allParagraphs[allParagraphs.length - 1].endOffset || 0
-    : 0
-  if (docTotalLen === 0) return
-
-  // 计算每个扁平化文本项的累计字符结束位置
-  const itemEndPos: number[] = []
-  let acc = 0
-  for (const item of allItems) {
-    acc += item.str.length
-    itemEndPos.push(acc)
-  }
-
-  // 按段落顺序逐段匹配 PDF 文本项
-  for (const match of allParagraphs) {
-    if (!match.backgroundColor || !match.endOffset || match.endOffset <= match.startOffset) {
-      continue
-    }
-
-    // 优先使用后端精确记录的 PDF 字符位置（pdfStartPos/pdfEndPos），
-    // 向后兼容：若无则用原始偏移在 docx 原文中的比例，映射到 PDF 文本项的字符位置
-    const startCharPos = match.pdfStartPos != null
-      ? match.pdfStartPos
-      : Math.floor((match.startOffset / docTotalLen) * allPagesTotalChars.value)
-    const endCharPos = match.pdfEndPos != null
-      ? match.pdfEndPos
-      : Math.ceil((match.endOffset / docTotalLen) * allPagesTotalChars.value)
-
-    // 起始项用严格大于：跳过边界处前一段的最后一个文本项，避免吞并前段区域
-    const startItemIdx = startCharPos === 0
-      ? 0
-      : binarySearchItemIndexGT(itemEndPos, startCharPos)
-    const endItemIdx = Math.min(binarySearchItemIndex(itemEndPos, endCharPos), allItems.length - 1)
-
-    // 收集在当前页面上的文本项
-    const pageItems: typeof allItems = []
-    for (let i = startItemIdx; i <= endItemIdx; i++) {
-      if (allItems[i].pageNum === currentPage.value) {
-        pageItems.push(allItems[i])
-      }
-    }
-
-    if (pageItems.length === 0) {
-      continue
-    }
-
-    // 计算合并包围盒并绘制高亮矩形
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-    for (const item of pageItems) {
-      if (item.transform && item.width != null && item.height != null) {
-        const x = item.transform[4] * effectiveScale
-        const y = viewport.height - (item.transform[5] * effectiveScale) - item.height * effectiveScale
-        const w = item.width * effectiveScale
-        const h = item.height * effectiveScale
-
-        minX = Math.min(minX, x)
-        minY = Math.min(minY, y)
-        maxX = Math.max(maxX, x + w)
-        maxY = Math.max(maxY, y + h)
-      }
-    }
-
-    if (minX < Infinity) {
-      context.fillStyle = match.backgroundColor
-      context.globalAlpha = 0.35
-      context.fillRect(minX, minY, maxX - minX, maxY - minY)
-      context.globalAlpha = 1.0
-    }
-
   }
 }
 
@@ -661,13 +599,6 @@ onUnmounted(() => {
   display: block;
 }
 
-.highlight-canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  pointer-events: none;
-}
-
 /* 翻页控制 */
 .page-controls {
   display: flex;
@@ -705,12 +636,12 @@ onUnmounted(() => {
 
 .legend-color {
   display: inline-block;
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  border: 1px solid #d9d9d9;
+  width: 24px;
+  height: 4px;
+  border-radius: 2px;
   flex-shrink: 0;
-  margin-top: 2px;
+  margin-top: 8px;
+  vertical-align: middle;
 }
 
 .legend-info {
@@ -727,6 +658,46 @@ onUnmounted(() => {
 
 .legend-tag {
   align-self: flex-start;
+}
+
+/* 搜索栏 */
+.search-bar {
+  margin-bottom: 10px;
+}
+
+.search-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.search-nav-info {
+  color: #606266;
+  min-width: 40px;
+  text-align: center;
+}
+
+.search-no-result {
+  color: #f56c6c;
+  font-size: 12px;
+}
+
+.search-highlight {
+  background-color: #fff3cd;
+  color: #856404;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.adjust-item.is-search-match {
+  border-color: #b3d8ff;
+}
+
+.adjust-item.is-current-match {
+  border-color: #409eff;
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2);
 }
 
 /* 段落调整区域 */
@@ -772,6 +743,17 @@ onUnmounted(() => {
 
 .adjust-arrow.expanded {
   transform: rotate(180deg);
+}
+
+.adjust-rulename {
+  font-size: 12px;
+  color: #606266;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 .adjust-preview {
