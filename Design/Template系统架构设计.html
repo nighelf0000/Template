@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Template 系统 — 架构设计文档</title>
+<style>
+  :root {
+    --primary: #1a73e8;
+    --bg: #f8f9fa;
+    --card: #ffffff;
+    --border: #e0e0e0;
+    --text: #333;
+    --code-bg: #f1f3f4;
+    --table-stripe: #f5f7fa;
+    --success: #1e8e3e;
+    --warn: #f9ab00;
+    --danger: #ea4335;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 20px;
+  }
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    background: var(--card);
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    padding: 48px 56px;
+    position: relative;
+  }
+  .watermark {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%) rotate(-30deg);
+    font-size: 120px;
+    color: rgba(0,0,0,0.015);
+    pointer-events: none;
+    white-space: nowrap;
+    font-weight: bold;
+  }
+  h1 {
+    font-size: 28px;
+    border-bottom: 3px solid var(--primary);
+    padding-bottom: 16px;
+    margin-bottom: 8px;
+    color: #111;
+  }
+  .meta { color: #888; font-size: 14px; margin-bottom: 32px; }
+  h2 {
+    font-size: 20px;
+    margin: 40px 0 16px;
+    padding-left: 12px;
+    border-left: 4px solid var(--primary);
+  }
+  h3 { font-size: 17px; margin: 24px 0 12px; color: #444; }
+  h4 { font-size: 15px; margin: 16px 0 8px; color: #555; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 20px;
+    font-size: 14px;
+  }
+  th {
+    background: #e8f0fe;
+    color: #1a56b9;
+    font-weight: 600;
+    padding: 10px 14px;
+    text-align: left;
+    border: 1px solid var(--border);
+  }
+  td {
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: var(--table-stripe); }
+
+  pre {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: 16px 20px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.5;
+    margin: 12px 0 20px;
+  }
+  code {
+    font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+  pre code {
+    background: transparent;
+    padding: 0;
+  }
+  .tag {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-right: 6px;
+  }
+  .tag-blue { background: #e8f0fe; color: #1a56b9; }
+  .tag-green { background: #e6f4ea; color: #137333; }
+  .tag-orange { background: #fef7e0; color: #b06000; }
+  .tag-red { background: #fce8e6; color: #c5221f; }
+
+  .arch-diagram {
+    background: #2d2d2d;
+    color: #e0e0e0;
+    font-family: "Cascadia Code", "Consolas", monospace;
+    padding: 20px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre;
+    overflow-x: auto;
+    margin: 12px 0 20px;
+  }
+  .card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    background: white;
+  }
+  .card h4 {
+    margin: 0 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .flow-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 16px 0;
+  }
+  .flow-box {
+    padding: 8px 20px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .flow-arrow { font-size: 18px; color: #888; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+
+  .toc { background: #f8f9fa; border-radius: 8px; padding: 20px 28px; margin: 20px 0; }
+  .toc a { color: var(--primary); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .toc ol { margin: 8px 0 0 20px; }
+  .toc li { margin: 4px 0; }
+
+  @media print {
+    body { background: white; padding: 0; }
+    .container { box-shadow: none; border-radius: 0; max-width: 100%; }
+    pre { background: #f5f5f5; color: #333; border: 1px solid #ddd; }
+    .watermark { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="watermark">DESIGN DOC</div>
+
+<h1>📋 Template 系统 — 架构设计文档 v1.1</h1>
+<div class="meta">
+  日期：2026-05-07 &nbsp;|&nbsp; 状态：已更新（预览功能重构） &nbsp;|&nbsp;
+  <span class="tag tag-green">Agent 1 架构师 交付</span>
+  <span class="tag tag-blue">v1.1 预览重构</span>
+</div>
+
+<!-- 目录 -->
+<div class="toc">
+  <strong>📑 目录</strong>
+  <ol>
+    <li><a href="#s1">技术选型</a></li>
+    <li><a href="#s2">系统架构</a></li>
+    <li><a href="#s3">数据模型（4表ER关系 + DDL + 字段详解）</a></li>
+    <li><a href="#s4">API 设计（RESTful，16个接口）</a></li>
+    <li><a href="#s5">内容识别引擎设计</a></li>
+    <li><a href="#s6">前端页面结构</a></li>
+    <li><a href="#s7">项目结构</a></li>
+    <li><a href="#s8">约束与风险</a></li>
+    <li><a href="#s9">预览功能重构设计（v1.1 新增）</a></li>
+    <li><a href="#s10">相关改动记录</a></li>
+  </ol>
+</div>
+
+<hr>
+
+<!-- =============== 1 =============== -->
+<h2 id="s1">1. 技术选型</h2>
+
+<table>
+  <tr><th style="width:120px">层次</th><th style="width:180px">技术</th><th>说明</th></tr>
+  <tr><td>后端框架</td><td>SpringBoot 3.x + JDK 17</td><td>已安装 JDK 17</td></tr>
+  <tr><td>ORM</td><td>MyBatis + MyBatis-Plus</td><td>简化 CRUD、分页查询</td></tr>
+  <tr><td>数据库</td><td>MySQL 8.4</td><td>已安装，用户 root/root</td></tr>
+  <tr><td>Word 操作</td><td><span class="tag tag-green">推荐</span> Apache POI 5.x</td><td>poi-ooxml，.docx 读写、样式操作</td></tr>
+  <tr><td>前端</td><td>Vue 3 + Element Plus</td><td>前后端分离，Vite 构建</td></tr>
+  <tr><td>构建</td><td>Maven（后端）/ Vite（前端）</td><td></td></tr>
+  <tr><td>文件存储</td><td>数据库 BLOB</td><td>LONGBLOB 最大 4GB（应用层限制 50MB）</td></tr>
+</table>
+
+<h3>Maven 关键依赖</h3>
+<pre><code>&lt;!-- Apache POI — Word 文档操作 --&gt;
+&lt;dependency&gt;
+    &lt;groupId&gt;org.apache.poi&lt;/groupId&gt;
+    &lt;artifactId&gt;poi-ooxml&lt;/artifactId&gt;
+    &lt;version&gt;5.4.0&lt;/version&gt;
+&lt;/dependency&gt;
+
+&lt;!-- MyBatis-Plus — ORM 增强 --&gt;
+&lt;dependency&gt;
+    &lt;groupId&gt;com.baomidou&lt;/groupId&gt;
+    &lt;artifactId&gt;mybatis-plus-spring-boot3-starter&lt;/artifactId&gt;
+    &lt;version&gt;3.5.10&lt;/version&gt;
+&lt;/dependency&gt;
+
+&lt;!-- Lombok --&gt;
+&lt;dependency&gt;
+    &lt;groupId&gt;org.projectlombok&lt;/groupId&gt;
+    &lt;artifactId&gt;lombok&lt;/artifactId&gt;
+&lt;/dependency&gt;</code></pre>
+
+<hr>
+
+<!-- =============== 2 =============== -->
+<h2 id="s2">2. 系统架构</h2>
+
+<div class="arch-diagram">┌─────────────────────────────────────────────────┐
+│                   前端 (Vue 3)                   │
+│  模板维护页面  │  Word文件格式化页面              │
+│  /template/*   │  /word/*                        │
+└──────────────────────┬──────────────────────────┘
+                       │ REST API (JSON)
+┌──────────────────────▼──────────────────────────┐
+│                SpringBoot 后端                    │
+│                                                  │
+│  Controller 层                                   │
+│  ├── TemplateController  模板维护                │
+│  └── WordController      Word文件格式化          │
+│                                                  │
+│  Service 层                                      │
+│  ├── TemplateService    规则模板业务逻辑         │
+│  ├── WordParseService   Word解析/格式化/预览     │
+│  ├── RecognitionEngine  内容识别引擎             │
+│  └── PdfConversionService PDF转换 (v1.1)         │
+│                                                  │
+│  DAO 层 (MyBatis)                               │
+│  └── Mapper 接口                                 │
+└──────────────────────┬──────────────────────────┘
+                       │ JDBC
+┌──────────────────────▼──────────────────────────┐
+│                  MySQL 8.4                        │
+│  4 张业务表                                      │
+└─────────────────────────────────────────────────┘</div>
+
+<hr>
+
+<!-- =============== 3 =============== -->
+<h2 id="s3">3. 数据模型</h2>
+
+<h3>3.0 表关系总览</h3>
+
+<div class="arch-diagram">┌──────────────────────┐
+│   template_config    │
+│     (模板配置)        │
+│ id BIGINT PK         │──1──┐
+│ name VARCHAR(200)    │     │ 1
+│ is_active TINYINT    │     │
+└──────────────────────┘     │
+        │                    │
+        │ 1                  │
+        ├────────┐           │
+        │ N      │ N         │
+┌───────▼──────────┐        │
+│  template_rule   │        │
+│  (样式规则)       │        │
+│ template_id FK───┼────────┘
+│ name, font_name  │
+│ font_size, bold  │
+│ italic, underline │
+│ color, align     │
+│ indent, spacing  │
+└──────────────────┘
+                             │
+                  ┌──────────▼───────────┐
+                  │ template_engine_config│
+                  │   (识别引擎配置)       │
+                  │ template_id FK UNIQUE ├── 1:1
+                  │ cover_pattern  TEXT   │
+                  │ toc_pattern    TEXT   │
+                  │ title_patterns TEXT   │
+                  │ body_pattern   TEXT   │
+                  └──────────────────────┘
+
+┌──────────────────────────┐
+│    user_upload_file      │
+│    (用户上传文件)         │
+│ template_id BIGINT       │── N:1 ──→ template_config
+│ original_content LONGBLOB│
+│ parsed_content   LONGBLOB│
+│ parsed_json    MEDIUMTEXT│
+│ manual_adjust_json       │
+│ output_content  LONGBLOB│
+│ status VARCHAR(20)       │
+└──────────────────────────┘</div>
+
+<div class="card-grid">
+  <div class="card">
+    <h4><span class="tag tag-blue">1:N</span> template_config → template_rule</h4>
+    <p style="font-size:14px;color:#666">一个模板包含多个样式规则。删除模板时级联删除其下所有规则（CASCADE）。</p>
+  </div>
+  <div class="card">
+    <h4><span class="tag tag-green">1:1</span> template_config → template_engine_config</h4>
+    <p style="font-size:14px;color:#666">一个模板有且仅有一个引擎配置。UNIQUE 约束保证一对一。</p>
+  </div>
+  <div class="card">
+    <h4><span class="tag tag-orange">1:N</span> template_config → user_upload_file</h4>
+    <p style="font-size:14px;color:#666">一个模板可被多个上传文件使用。删除模板时文件表 template_id 置 NULL（SET NULL）。</p>
+  </div>
+  <div class="card">
+    <h4><span class="tag tag-red">三态逻辑</span> 样式字段设计</h4>
+    <p style="font-size:14px;color:#666">NULL = 保持原文不变 &nbsp;|&nbsp; 0 = 明确关闭 &nbsp;|&nbsp; 1 = 明确开启</p>
+  </div>
+</div>
+
+<!-- === 3.1 === -->
+<h3>3.1 模板信息配置表 <code>template_config</code></h3>
+
+<pre><code>CREATE TABLE template_config (
+    id          BIGINT       NOT NULL AUTO_INCREMENT  COMMENT '主键ID',
+    name        VARCHAR(200) NOT NULL                 COMMENT '规则模板名称',
+    is_active   TINYINT      NOT NULL DEFAULT 1       COMMENT '是否有效：1=有效, 0=停用',
+    created_at  DATETIME     NOT NULL DEFAULT NOW()   COMMENT '创建时间',
+    updated_at  DATETIME     NOT NULL DEFAULT NOW() ON UPDATE NOW(),
+    PRIMARY KEY (id),
+    INDEX idx_name (name),
+    INDEX idx_is_active (is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='模板信息配置表';</code></pre>
+
+<table>
+  <tr><th>字段</th><th>类型</th><th>必填</th><th>默认值</th><th>业务说明</th></tr>
+  <tr><td>id</td><td>BIGINT</td><td>是</td><td>AUTO</td><td>系统自增主键</td></tr>
+  <tr><td>name</td><td>VARCHAR(200)</td><td>是</td><td>-</td><td>模板名称，界面展示。建议唯一，由业务层校验</td></tr>
+  <tr><td>is_active</td><td>TINYINT</td><td>是</td><td>1</td><td>逻辑删除开关。停用后历史数据仍可查看，新建解析任务不可选</td></tr>
+  <tr><td>created_at</td><td>DATETIME</td><td>是</td><td>NOW()</td><td>插入时自动填充</td></tr>
+  <tr><td>updated_at</td><td>DATETIME</td><td>是</td><td>NOW()</td><td>自动更新为当前时间</td></tr>
+</table>
+
+<!-- === 3.2 === -->
+<h3>3.2 模板规则样式配置表 <code>template_rule</code></h3>
+
+<pre><code>CREATE TABLE template_rule (
+    id              BIGINT        NOT NULL AUTO_INCREMENT  COMMENT '主键ID',
+    template_id     BIGINT        NOT NULL                 COMMENT '所属模板ID',
+    name            VARCHAR(200)  NOT NULL                 COMMENT '样式规则名称',
+    -- 字体相关
+    font_name       VARCHAR(100)  DEFAULT NULL             COMMENT '字体名称',
+    font_size       INT           DEFAULT NULL             COMMENT '字号(磅值)',
+    font_bold       TINYINT       DEFAULT NULL             COMMENT '是否加粗：1=是, 0=否, NULL=不修改',
+    font_italic     TINYINT       DEFAULT NULL             COMMENT '是否斜体',
+    font_underline  TINYINT       DEFAULT NULL             COMMENT '是否下划线',
+    font_color      VARCHAR(20)   DEFAULT NULL             COMMENT '字体颜色 十六进制 #RRGGBB',
+    font_strike     TINYINT       DEFAULT NULL             COMMENT '是否删除线',
+    -- 段落相关
+    text_align      VARCHAR(20)   DEFAULT NULL             COMMENT '对齐：LEFT/CENTER/RIGHT/JUSTIFY',
+    text_indent     DECIMAL(10,2) DEFAULT NULL             COMMENT '首行缩进(字符数)',
+    line_spacing    DECIMAL(10,2) DEFAULT NULL             COMMENT '行距(倍数)',
+    space_before    DECIMAL(10,2) DEFAULT NULL             COMMENT '段前间距(磅)',
+    space_after     DECIMAL(10,2) DEFAULT NULL             COMMENT '段后间距(磅)',
+    highlight_color VARCHAR(20)   DEFAULT NULL             COMMENT '预览高亮底色',
+    created_at      DATETIME      NOT NULL DEFAULT NOW(),
+    updated_at      DATETIME      NOT NULL DEFAULT NOW() ON UPDATE NOW(),
+    PRIMARY KEY (id),
+    INDEX idx_template_id (template_id),
+    CONSTRAINT fk_rule_template FOREIGN KEY (template_id)
+        REFERENCES template_config(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='模板规则样式配置表';</code></pre>
+
+<p><strong>三态逻辑：</strong>所有样式字段（bold/italic/underline/strike）采用 <code>NULL</code>/<code>0</code>/<code>1</code> 三态设计，NULL 表示不修改原文样式。</p>
+
+<!-- === 3.3 === -->
+<h3>3.3 内容识别引擎配置表 <code>template_engine_config</code></h3>
+
+<pre><code>CREATE TABLE template_engine_config (
+    id              BIGINT      NOT NULL AUTO_INCREMENT  COMMENT '主键ID',
+    template_id     BIGINT      NOT NULL                 COMMENT '关联模板ID',
+    cover_pattern   TEXT        DEFAULT NULL             COMMENT '封面识别正则',
+    toc_pattern     TEXT        DEFAULT NULL             COMMENT '目录识别正则',
+    title_patterns  TEXT        DEFAULT NULL             COMMENT '标题识别规则(JSON数组)',
+    body_pattern    TEXT        DEFAULT NULL             COMMENT '正文识别正则',
+    created_at      DATETIME    NOT NULL DEFAULT NOW(),
+    updated_at      DATETIME    NOT NULL DEFAULT NOW() ON UPDATE NOW(),
+    PRIMARY KEY (id),
+    UNIQUE INDEX uk_template_id (template_id),
+    CONSTRAINT fk_engine_template FOREIGN KEY (template_id)
+        REFERENCES template_config(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;</code></pre>
+
+<h4>title_patterns JSON 格式</h4>
+<pre><code>[
+  {"pattern": "^第.{1,20}章", "level": 1, "rule_id": 2, "description": "匹配第X章"},
+  {"pattern": "^第.{1,20}节", "level": 2, "rule_id": 3, "description": "匹配第X节"},
+  {"pattern": "^\\d+\\.\\d+\\s", "level": 3, "rule_id": 4, "description": "匹配1.1 "},
+  {"pattern": "^(一|二|三|四|五)+[、，]", "level": 2, "rule_id": 3}
+]</code></pre>
+
+<p><strong>匹配优先级：</strong>封面 → 目录 → 标题(按 level 升序) → 正文</p>
+
+<!-- === 3.4 === -->
+<h3>3.4 用户上传文件表 <code>user_upload_file</code></h3>
+
+<pre><code>CREATE TABLE user_upload_file (
+    id                  BIGINT        NOT NULL AUTO_INCREMENT  COMMENT '主键ID',
+    template_id         BIGINT        DEFAULT NULL             COMMENT '使用的模板ID',
+    original_name       VARCHAR(500)  NOT NULL                 COMMENT '原始文件名',
+    original_size       BIGINT        DEFAULT NULL             COMMENT '原始文件大小(字节)',
+    original_content    LONGBLOB      NOT NULL                 COMMENT '原始Word文件内容',
+    parsed_content      LONGBLOB      DEFAULT NULL             COMMENT '解析后预览Word文件',
+    parsed_json         MEDIUMTEXT    DEFAULT NULL             COMMENT '解析结果JSON',
+    parsed_at           DATETIME      DEFAULT NULL             COMMENT '解析完成时间',
+    manual_adjust_json  MEDIUMTEXT    DEFAULT NULL             COMMENT '人工调整JSON',
+    adjusted_at         DATETIME      DEFAULT NULL             COMMENT '调整保存时间',
+    output_content      LONGBLOB      DEFAULT NULL             COMMENT '导出文件内容',
+    output_name         VARCHAR(500)  DEFAULT NULL             COMMENT '导出文件名',
+    exported_at         DATETIME      DEFAULT NULL             COMMENT '导出完成时间',
+    status              VARCHAR(20)   NOT NULL DEFAULT 'UPLOADED' COMMENT '文件状态',
+    error_message       VARCHAR(2000) DEFAULT NULL             COMMENT '错误信息',
+    created_at          DATETIME      NOT NULL DEFAULT NOW(),
+    updated_at          DATETIME      NOT NULL DEFAULT NOW() ON UPDATE NOW(),
+    PRIMARY KEY (id),
+    INDEX idx_template_id (template_id),
+    INDEX idx_status (status),
+    INDEX idx_created_at (created_at),
+    CONSTRAINT fk_file_template FOREIGN KEY (template_id)
+        REFERENCES template_config(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;</code></pre>
+
+<h4>状态流转</h4>
+<div class="flow-row">
+  <span class="flow-box" style="background:#e8f0fe;color:#1a56b9">UPLOADED</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box" style="background:#e6f4ea;color:#137333">PARSED</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box" style="background:#fef7e0;color:#b06000">ADJUSTED</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box" style="background:#fce8e6;color:#c5221f">EXPORTED</span>
+</div>
+
+<h4>parsed_json / manual_adjust_json 格式</h4>
+<pre><code>{
+  "template_id": 1,
+  "template_name": "标书模板",
+  "paragraphs": [
+    {
+      "index": 0,
+      "text": "第一章 项目概述",
+      "matched_type": "TITLE",
+      "matched_level": 1,
+      "rule_id": 2,
+      "rule_name": "一级标题",
+      "style": {
+        "font_name": "黑体", "font_size": 22,
+        "font_bold": 1, "font_color": "#000000",
+        "text_align": "CENTER", "highlight_color": "#FFCDD2"
+      }
+    },
+    {
+      "index": 1,
+      "text": "本项目旨在建设一套完整的...",
+      "matched_type": "BODY",
+      "matched_level": null,
+      "rule_id": 5, "rule_name": "正文",
+      "style": {
+        "font_name": "宋体", "font_size": 14,
+        "text_indent": 2.00, "line_spacing": 1.50
+      }
+    }
+  ]
+}</code></pre>
+
+<hr>
+
+<!-- =============== 4 =============== -->
+<h2 id="s4">4. API 设计</h2>
+
+<h3>4.1 模板维护 <code>/api/template</code></h3>
+<table>
+  <tr><th style="width:60px">方法</th><th style="width:240px">路径</th><th>说明</th></tr>
+  <tr><td><span class="tag tag-green">POST</span></td><td>/api/template</td><td>新增规则模板</td></tr>
+  <tr><td><span class="tag tag-blue">GET</span></td><td>/api/template/{id}</td><td>查看模板详情（含规则列表 + 引擎配置）</td></tr>
+  <tr><td><span class="tag tag-blue">GET</span></td><td>/api/template/list</td><td>查看所有规则模板（分页）</td></tr>
+  <tr><td><span class="tag tag-orange">PUT</span></td><td>/api/template/{id}</td><td>修改规则模板基本信息</td></tr>
+  <tr><td><span class="tag tag-orange">PUT</span></td><td>/api/template/{id}/toggle</td><td>启用/禁用模板</td></tr>
+</table>
+
+<h3>4.2 模板规则 <code>/api/template/{templateId}/rule</code></h3>
+<table>
+  <tr><th style="width:60px">方法</th><th style="width:280px">路径</th><th>说明</th></tr>
+  <tr><td><span class="tag tag-green">POST</span></td><td>/api/template/{templateId}/rule</td><td>新增样式规则</td></tr>
+  <tr><td><span class="tag tag-blue">GET</span></td><td>/api/template/{templateId}/rule/{id}</td><td>查看规则详情</td></tr>
+  <tr><td><span class="tag tag-blue">GET</span></td><td>/api/template/{templateId}/rule/list</td><td>查看模板下所有规则</td></tr>
+  <tr><td><span class="tag tag-orange">PUT</span></td><td>/api/template/{templateId}/rule/{id}</td><td>修改样式规则</td></tr>
+  <tr><td><span class="tag tag-red">DELETE</span></td><td>/api/template/{templateId}/rule/{id}</td><td>删除样式规则</td></tr>
+</table>
+
+<h3>4.3 识别引擎配置 <code>/api/template/{templateId}/engine</code></h3>
+<table>
+  <tr><th style="width:60px">方法</th><th style="width:280px">路径</th><th>说明</th></tr>
+  <tr><td><span class="tag tag-orange">PUT</span></td><td>/api/template/{templateId}/engine</td><td>保存/更新识别引擎配置</td></tr>
+  <tr><td><span class="tag tag-blue">GET</span></td><td>/api/template/{templateId}/engine</td><td>查看识别引擎配置</td></tr>
+</table>
+
+<h3>4.4 Word 文件格式化 <code>/api/word</code></h3>
+<table>
+  <tr><th style="width:60px">方法</th><th style="width:220px">路径</th><th>说明</th></tr>
+  <tr><td><span class="tag tag-blue">GET</span></td><td>/api/word/list</td><td>查看所有上传文件</td></tr>
+  <tr><td><span class="tag tag-green">POST</span></td><td>/api/word/upload</td><td>上传 Word 文件 (multipart)</td></tr>
+  <tr><td><span class="tag tag-green">POST</span></td><td>/api/word/{id}/parse</td><td>解析文件</td></tr>
+  <tr><td><span class="tag tag-blue">GET</span></td><td>/api/word/{id}/preview</td><td>获取预览数据（JSON：匹配信息 + pdfUrl + 图例）</td></tr>
+  <tr><td><span class="tag tag-blue">GET</span></td><td>/api/word/{id}/preview/pdf</td><td><span class="tag tag-green">v1.1</span> 获取预览 PDF 文件（application/pdf 二进制流）</td></tr>
+  <tr><td><span class="tag tag-orange">PUT</span></td><td>/api/word/{id}/adjust</td><td>保存人工调整结果</td></tr>
+  <tr><td><span class="tag tag-green">POST</span></td><td>/api/word/{id}/export</td><td>导出格式化 Word 文件</td></tr>
+  <tr><td><span class="tag tag-blue">GET</span></td><td>/api/word/{id}/download</td><td>下载导出文件</td></tr>
+</table>
+
+<hr>
+
+<!-- =============== 5 =============== -->
+<h2 id="s5">5. 内容识别引擎设计</h2>
+
+<h3>工作流程</h3>
+
+<div class="flow-row">
+  <span class="flow-box" style="background:#f3e8ff">1. 提取段落文本</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box" style="background:#e8f0fe">2. 封面正则匹配</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box" style="background:#e8f0fe">3. 目录正则匹配</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box" style="background:#e8f0fe">4. 标题正则匹配</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box" style="background:#fef7e0">5. 剩余→正文</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box" style="background:#e6f4ea">6. 输出JSON映射</span>
+</div>
+
+<p style="margin:16px 0; font-size:14px;">匹配优先级：<strong>封面 &gt; 目录 &gt; 标题(按 level 升序) &gt; 正文</strong>。一旦某个段落被高优先级规则命中，不再参与后续匹配。</p>
+
+<hr>
+
+<!-- =============== 6 =============== -->
+<h2 id="s6">6. 前端页面结构</h2>
+
+<table>
+  <tr><th>路由</th><th>页面</th><th>说明</th></tr>
+  <tr><td><code>/template</code></td><td>模板维护列表页</td><td>展示所有模板，支持新增、启用/禁用</td></tr>
+  <tr><td><code>/template/:id</code></td><td>模板详情页</td><td>显示规则列表 + 引擎配置入口</td></tr>
+  <tr><td><code>/template/:id/engine</code></td><td>引擎配置页</td><td>配置封面/目录/标题/正文正则</td></tr>
+  <tr><td><code>/word/upload</code></td><td>文件上传页</td><td>上传 .docx，选择模板，触发解析</td></tr>
+  <tr><td><code>/word/:id/preview</code></td><td>解析预览页</td><td><span class="tag tag-green">v1.1</span> PDF.js 分页渲染 + Canvas 高亮叠加 + 右侧图例面板 + 手动调整</td></tr>
+</table>
+
+<hr>
+
+<!-- =============== 7 =============== -->
+<h2 id="s7">7. 项目结构</h2>
+
+<pre><code>Projects/Template/
+├── pom.xml
+├── src/main/java/com/template/
+│   ├── TemplateApplication.java          ← SpringBoot 启动类
+│   ├── controller/
+│   │   ├── TemplateController.java       ← 模板维护 API
+│   │   └── WordController.java           ← Word 格式化 API
+│   ├── service/
+│   │   ├── TemplateService.java          ← 模板业务逻辑
+│   │   ├── WordParseService.java         ← 文件解析/预览/导出
+│   │   ├── RecognitionEngine.java        ← 内容识别引擎
+│   │   └── pdf/                          ← v1.1 PDF转换服务
+│   │       ├── PdfConversionService.java
+│   │       ├── PoiPdfConversionService.java
+│   │       └── LibreOfficePdfConversionService.java
+│   ├── mapper/
+│   │   ├── TemplateConfigMapper.java
+│   │   ├── TemplateRuleMapper.java
+│   │   ├── EngineConfigMapper.java
+│   │   └── UploadFileMapper.java
+│   ├── entity/
+│   │   ├── TemplateConfig.java
+│   │   ├── TemplateRule.java
+│   │   ├── EngineConfig.java
+│   │   └── UploadFile.java
+│   ├── dto/
+│   │   ├── ApiResponse.java              ← 统一响应格式
+│   │   ├── PreviewResultDTO.java         ← v1.1 预览响应
+│   │   ├── ParagraphItemDTO.java         ← v1.1 段落预览项
+│   │   ├── LegendItemDTO.java            ← v1.1 图例项
+│   │   └── ...
+│   ├── util/
+│   │   └── ParagraphStyleExtractor.java  ← v1.1 POI→CSS映射
+│   └── config/
+│       ├── MybatisPlusConfig.java        ← 分页插件配置
+│       └── PdfConverterConfig.java       ← v1.1 PDF转换配置
+├── src/main/resources/
+│   ├── application.yml
+│   ├── init.sql                          ← 数据库初始化脚本
+│   └── mapper/                           ← MyBatis XML
+└── src/main/frontend/                    ← Vue 3 前端
+    └── src/views/                        ← 页面组件</code></pre>
+
+<hr>
+
+<!-- =============== 8 =============== -->
+<h2 id="s8">8. 约束与风险</h2>
+
+<table>
+  <tr><th style="width:200px">约束 / 风险</th><th>应对策略</th></tr>
+  <tr>
+    <td>仅支持 .docx (Office 2007+)</td>
+    <td>Apache POI 不支持旧 .doc 格式，前端上传时校验文件扩展名，后端校验 Content-Type</td>
+  </tr>
+  <tr>
+    <td>大文件 BLOB 存储</td>
+    <td>LONGBLOB 最大 4GB，应用层限制上传 50MB（Spring Multipart 配置）</td>
+  </tr>
+  <tr>
+    <td>正则规则匹配精度</td>
+    <td>复杂排版可能识别不准，提供人工调整功能兜底</td>
+  </tr>
+  <tr>
+    <td>单用户无权限</td>
+    <td>当前不做登录认证，后续可扩展 Spring Security + JWT</td>
+  </tr>
+  <tr>
+    <td>并发解析性能</td>
+    <td>单个文件解析，当前无并发压力。后续可引入任务队列</td>
+  </tr>
+  <tr>
+    <td><span class="tag tag-green">v1.1</span> PDF 转换质量</td>
+    <td>POI+PDFBox 纯 Java 方案可能无法完美还原复杂文档排版。提供 LibreOffice headless 兜底方案，通过配置切换</td>
+  </tr>
+  <tr>
+    <td><span class="tag tag-green">v1.1</span> 文本高亮定位精度</td>
+    <td>PDF.js 文本位置与段落匹配可能存在偏移（特别是中文文档）。采用模糊匹配 + 包围盒近似 + 人工校对兜底</td>
+  </tr>
+  <tr>
+    <td><span class="tag tag-green">v1.1</span> 大文件 PDF 传输</td>
+    <td>含图片的 PDF 可能较大，Base64 传输消耗带宽。提供独立 PDF 流式端点，浏览器原生缓存</td>
+  </tr>
+</table>
+
+<hr>
+
+<!-- =============== 9 =============== -->
+<h2 id="s9">9. 预览功能重构设计（v1.1 新增）</h2>
+
+<div class="meta" style="margin-bottom:16px">
+  <span class="tag tag-green">新增</span> 2026-05-07 — 基于用户需求：预览效果对齐 Office Word + 分页 + 文本高亮 + 右侧图例
+</div>
+
+<h3>9.1 重构动机</h3>
+
+<p>原预览方案采用逐段落 <code>div</code> 卡片渲染，存在以下本质差距：</p>
+<table>
+  <tr><th>维度</th><th>旧方案（div 卡片）</th><th>新方案（PDF.js）</th></tr>
+  <tr><td>渲染保真度</td><td>独立卡片，丢失 Word 连续排版效果</td><td><strong>PDF 精确还原</strong> Word 页面布局</td></tr>
+  <tr><td>分页</td><td>无分页概念</td><td><strong>一个预览页 = Word 一个页面</strong></td></tr>
+  <tr><td>内容完整性</td><td>表格/图片/页眉页脚丢失；文本截断 200 字符</td><td><strong>全部保留</strong>，零丢失</td></tr>
+  <tr><td>高亮粒度</td><td>整段卡片底色</td><td><strong>Canvas 叠加层</strong>精确覆盖匹配文本</td></tr>
+  <tr><td>图例位置</td><td>顶部水平排列</td><td><strong>右侧固定悬浮</strong>面板</td></tr>
+</table>
+
+<h3>9.2 整体架构</h3>
+
+<div class="arch-diagram">┌──────────────────────────────────────────────────────────────────┐
+│                     预览链路（PDF 展示）                           │
+│                                                                   │
+│  original_content (.docx bytes)                                   │
+│       │                                                           │
+│       ▼                                                           │
+│  PdfConversionService                                              │
+│  ├── PoiPdfConversionService (默认，纯 Java)                       │
+│  └── LibreOfficePdfConversionService (兜底，高质量)                │
+│       │                                                           │
+│       ▼                                                           │
+│  PDF 字节流 ──────── GET /api/word/{id}/preview/pdf               │
+│       │                                                           │
+│       ▼                                                           │
+│  前端 PDF.js 按页渲染 Canvas                                       │
+│       │                                                           │
+│       ├── 文本高亮叠加层 (Canvas) — 根据匹配信息绘制底色矩形        │
+│       ├── 右侧固定图例面板 (LegendPanel) — 底色↔规则对应关系       │
+│       └── 手动调整交互 — 保留原有下拉选择 matchedType 功能          │
+│                                                                   │
+│  匹配信息来源（优先级）：                                           │
+│  manualAdjustJson (用户调整后) > parsedJson (自动识别)              │
+└──────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│                     导出链路（Word 下载）                          │
+│                                                                   │
+│  original_content → POI XWPFDocument → applyStyles()              │
+│       │                                                           │
+│       ▼                                                           │
+│  output_content (.docx) ─── 用户下载格式化后 Word 文件             │
+│                                                                   │
+│  ★ PDF 仅用于预览，下载始终保持 .docx 格式                         │
+└──────────────────────────────────────────────────────────────────┘</div>
+
+<h3>9.3 手动调整闭环</h3>
+
+<div class="flow-row">
+  <span class="flow-box" style="background:#e8f0fe">1. 上传 &amp; 解析</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box" style="background:#e6f4ea">2. 首次预览 (PDF)</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box" style="background:#fef7e0">3. 手动调整 matchedType</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box" style="background:#fce8e6">4. 保存 (manualAdjustJson)</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box" style="background:#e8f0fe">5. 再次预览 (重新生成 PDF)</span>
+</div>
+
+<p style="margin:12px 0;font-size:14px">
+  Preview 阶段匹配源优先级：<code>manualAdjustJson</code> &gt; <code>parsedJson</code>。
+  若使用 manualAdjustJson，后端自动回填 <code>ruleId</code> / <code>ruleName</code>。
+  PDF 始终基于 <code>original_content</code> 生成，与匹配源无关。
+</p>
+
+<h3>9.4 PDF 转换策略</h3>
+
+<table>
+  <tr><th>配置值</th><th>实现类</th><th>原理</th><th>质量</th><th>部署要求</th></tr>
+  <tr>
+    <td><code>poi</code>（默认）</td>
+    <td>PoiPdfConversionService</td>
+    <td>Apache POI 读取 .docx → Apache PDFBox 构建 PDF</td>
+    <td>中等（纯文本型文档足够）</td>
+    <td>零外部依赖</td>
+  </tr>
+  <tr>
+    <td><code>libreoffice</code></td>
+    <td>LibreOfficePdfConversionService</td>
+    <td>ProcessBuilder 调用 LibreOffice headless 转换</td>
+    <td>高（完美还原 Word 排版）</td>
+    <td>需安装 LibreOffice</td>
+  </tr>
+</table>
+
+<pre><code># application.yml 配置
+template:
+  pdf:
+    converter: poi                # poi | libreoffice
+    libreoffice:
+      path: soffice               # LibreOffice 可执行文件路径
+      timeout-seconds: 30         # 转换超时秒数
+    cache:
+      enabled: true               # 是否缓存 PDF
+      ttl-minutes: 5              # 缓存有效期</code></pre>
+
+<p><strong>降级策略：</strong>LibreOffice 转换失败时自动降级到 POI 模式，记录 WARN 日志。</p>
+
+<h3>9.5 前端 PDF.js 集成</h3>
+
+<table>
+  <tr><th>依赖</th><th>版本</th><th>用途</th></tr>
+  <tr><td><code>pdfjs-dist</code></td><td>v4.x（Mozilla 官方）</td><td>PDF 解析 + Canvas 渲染 + 文本提取</td></tr>
+</table>
+
+<h4>组件结构</h4>
+
+<div class="arch-diagram">ParsePreview.vue (重构)
+├── 顶部操作栏 (模板名称 + 段落总数 + 保存按钮)
+├── MainLayout (左侧预览 + 右侧图例)
+│   ├── PdfViewer.vue (新增)
+│   │   ├── PDF 页面 Canvas 渲染区
+│   │   ├── HighlightOverlay (Canvas 叠加层 — 匹配文本底色矩形)
+│   │   └── 翻页控制栏 (上一页/下一页/页码输入)
+│   └── LegendPanel.vue (新增/改造)
+│       ├── 图例项列表 (色块 + 规则名 + matchedType)
+│       ├── 固定悬浮定位 (position: fixed; right: 0)
+│       ├── 点击图例项 → 跳转到对应匹配位置
+│       └── 可折叠/展开
+└── (移除) 旧的逐段落 div 卡片列表</div>
+
+<h4>高亮匹配算法</h4>
+
+<ol style="margin:8px 0 8px 20px; font-size:14px">
+  <li>PDF.js <code>page.getTextContent()</code> 获取每页文本项（含 <code>str, transform, width, height</code>）</li>
+  <li>将文本项按顺序拼接为页面文本字符串</li>
+  <li>遍历 matches 中每个段落文本，在页面文本中<strong>模糊匹配</strong>（编辑距离 ≤3）</li>
+  <li>根据匹配到的文本项 <code>transform</code> 计算包围盒（bounding box）</li>
+  <li>在叠加 Canvas 上绘制半透明底色矩形（opacity: 0.25，带 3px 彩色左边框）</li>
+</ol>
+
+<h4>前端优化</h4>
+<table>
+  <tr><th>优化项</th><th>说明</th></tr>
+  <tr><td>el-card → 纯 div</td><td>移除 Element Plus 卡片嵌套 DOM，减少重排</td></tr>
+  <tr><td>下拉框懒加载</td><td>默认显示 el-tag，点击后才渲染 el-select，避免 200 个下拉框同时挂载</td></tr>
+  <tr><td>PDF 缓存</td><td>后端内存缓存 5 分钟，同文件短期内不重复转换</td></tr>
+</table>
+
+<h3>9.6 新增/修改文件清单</h3>
+
+<table>
+  <tr><th>操作</th><th>文件</th><th>说明</th></tr>
+  <tr><td><span class="tag tag-green">新增</span></td><td><code>service/pdf/PdfConversionService.java</code></td><td>PDF 转换服务接口</td></tr>
+  <tr><td><span class="tag tag-green">新增</span></td><td><code>service/pdf/PoiPdfConversionService.java</code></td><td>POI+PDFBox 默认实现</td></tr>
+  <tr><td><span class="tag tag-green">新增</span></td><td><code>service/pdf/LibreOfficePdfConversionService.java</code></td><td>LibreOffice 高质量兜底实现</td></tr>
+  <tr><td><span class="tag tag-green">新增</span></td><td><code>service/pdf/PdfConversionException.java</code></td><td>PDF 转换自定义异常</td></tr>
+  <tr><td><span class="tag tag-green">新增</span></td><td><code>config/PdfConverterConfig.java</code></td><td>配置属性读取 + 条件注入</td></tr>
+  <tr><td><span class="tag tag-green">新增</span></td><td><code>dto/PreviewResultDTO.java</code></td><td>预览响应 DTO（含 pdfUrl、legend）</td></tr>
+  <tr><td><span class="tag tag-green">新增</span></td><td><code>dto/ParagraphItemDTO.java</code></td><td>段落项 DTO（原始样式 + 底色）</td></tr>
+  <tr><td><span class="tag tag-green">新增</span></td><td><code>dto/LegendItemDTO.java</code></td><td>图例项 DTO（规则ID + 颜色）</td></tr>
+  <tr><td><span class="tag tag-green">新增</span></td><td><code>util/ParagraphStyleExtractor.java</code></td><td>POI 段落 → CSS 样式映射工具</td></tr>
+  <tr><td><span class="tag tag-orange">修改</span></td><td><code>pom.xml</code></td><td>新增依赖：pdfbox</td></tr>
+  <tr><td><span class="tag tag-orange">修改</span></td><td><code>application.yml</code></td><td>新增 PDF 转换配置段</td></tr>
+  <tr><td><span class="tag tag-orange">修改</span></td><td><code>service/WordParseService.java</code></td><td>新增 preview() 方法（PDF生成 + 匹配源合并逻辑）</td></tr>
+  <tr><td><span class="tag tag-orange">修改</span></td><td><code>controller/WordController.java</code></td><td>新增 /preview/pdf 端点；preview() 返回类型改为 PreviewResultDTO</td></tr>
+  <tr><td><span class="tag tag-orange">修改</span></td><td><code>service/RecognitionEngine.java</code></td><td>移除 200 字符截断（Bug 修复）</td></tr>
+  <tr><td><span class="tag tag-orange">修改</span></td><td><code>frontend/package.json</code></td><td>新增依赖：pdfjs-dist</td></tr>
+  <tr><td><span class="tag tag-orange">修改</span></td><td><code>frontend/src/types/api.ts</code></td><td>新增 LegendItem 接口、ParseResult 新增 pdfUrl/legend</td></tr>
+  <tr><td><span class="tag tag-orange">重写</span></td><td><code>frontend/src/views/file/ParsePreview.vue</code></td><td>集成 PDF.js + Canvas 高亮 + 右侧图例 + 下拉框懒加载</td></tr>
+</table>
+
+<h3>9.7 预览 vs 导出职责分离</h3>
+
+<table>
+  <tr><th>方面</th><th>预览链路</th><th>导出链路</th></tr>
+  <tr><td>数据源</td><td><code>original_content</code> → PDF</td><td><code>original_content</code> → 应用样式 → .docx</td></tr>
+  <tr><td>匹配源</td><td>manualAdjustJson &gt; parsedJson</td><td>manualAdjustJson &gt; parsedJson</td></tr>
+  <tr><td>输出格式</td><td>PDF（application/pdf）</td><td>.docx（Word 文件）</td></tr>
+  <tr><td>使用方式</td><td>浏览器内联展示（PDF.js）</td><td>HTTP 附件下载</td></tr>
+  <tr><td>样式应用</td><td>无（保持原始文档外观）</td><td>TemplateRule 样式应用到段落</td></tr>
+</table>
+
+<hr>
+
+<!-- =============== 10 =============== -->
+<h2 id="s10">10. 相关改动记录</h2>
+
+<table>
+  <tr><th>日期</th><th>版本</th><th>改动内容</th></tr>
+  <tr>
+    <td>2026-05-06</td><td>v1.0</td>
+    <td>初始架构设计：技术选型、数据模型、16 个 API 端点、识别引擎、前端页面结构</td>
+  </tr>
+  <tr>
+    <td>2026-05-07</td><td>v1.1</td>
+    <td>
+      <strong>日志功能引入</strong>：Log4j 2.x + SLF4J + @Slf4j，排除 Logback，RollingFile 每小时拆分<br>
+      <strong>全局异常处理</strong>：新增 GlobalExceptionHandler（@RestControllerAdvice）<br>
+      <strong>预览功能重构</strong>：.docx → PDF + PDF.js 分页渲染 + Canvas 高亮叠加 + 右侧图例面板<br>
+      <strong>Bug 修复</strong>：parseTitlePatterns JSON 容错、matchToMap NPE 空判断、ParagraphStyleExtractor 字号空指针<br>
+      <strong>文本截断修复</strong>：移除 RecognitionEngine 200 字符截断
+    </td>
+  </tr>
+</table>
+
+<hr>
+
+<div style="text-align:center; padding: 20px; color: #888;">
+  <p>📄 文档由 <strong>Agent 1（架构师）</strong> 生成</p>
+  <p>v1.0: 2026-05-06 &nbsp;|&nbsp; v1.1: 2026-05-07 &nbsp;|&nbsp; ✅ 用户已确认</p>
+</div>
+
+</div>
+</body>
+</html>
