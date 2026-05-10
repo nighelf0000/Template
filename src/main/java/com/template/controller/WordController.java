@@ -4,11 +4,14 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.template.dto.AdjustRequestDTO;
 import jakarta.validation.Valid;
 import com.template.dto.ApiResponse;
+import com.template.dto.ParagraphItemDTO;
 import com.template.dto.PreviewResultDTO;
 import com.template.entity.UploadFile;
 import com.template.mapper.UploadFileMapper;
 import com.template.service.WordParseService;
+import com.template.service.pdf.PdfConversionException;
 import com.template.service.pdf.PdfConversionService;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -72,7 +75,7 @@ public class WordController {
     }
 
     /**
-     * 获取 PDF 预览文件（基于 original_content 实时生成）。
+     * 获取 PDF 预览文件（基于 original_content 实时生成，含段落底色）。
      */
     @GetMapping("/{id}/preview/pdf")
     public ResponseEntity<byte[]> previewPdf(@PathVariable Long id) {
@@ -81,11 +84,23 @@ public class WordController {
         if (uf == null || uf.getOriginalContent() == null) {
             return ResponseEntity.notFound().build();
         }
-        byte[] pdfBytes = pdfConversionService.convertToPdf(uf.getOriginalContent(), uf.getOriginalName());
-        return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_PDF)
-                .header("Content-Disposition", "inline; filename=\"preview.pdf\"")
-                .body(pdfBytes);
+        try {
+            // 获取段落底色信息
+            PreviewResultDTO previewResult = wordParseService.preview(id);
+            List<ParagraphItemDTO> paragraphs = previewResult.getParagraphs();
+
+            // 调用带底色的 PDF 生成
+            byte[] pdfBytes = pdfConversionService.convertToPdfWithBackground(
+                    uf.getOriginalContent(), uf.getOriginalName(), paragraphs);
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_PDF)
+                    .header("Content-Disposition", "inline; filename=\"preview.pdf\"")
+                    .body(pdfBytes);
+        } catch (PdfConversionException e) {
+            log.error("PDF 转换失败: id={}, filename={}", id, uf.getOriginalName(), e);
+            throw e;
+        }
     }
 
     @PutMapping("/{id}/adjust")

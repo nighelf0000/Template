@@ -34,17 +34,22 @@ public class RecognitionEngine {
         int cumulativeOffset = 0;
         for (int i = 0; i < paragraphs.size(); i++) {
             XWPFParagraph paragraph = paragraphs.get(i);
-            String text = paragraph.getText().trim();
-            if (text.isEmpty()) {
-                continue;
+            String rawText = paragraph.getText();
+            if (rawText == null) {
+                rawText = "";
             }
+            String displayText = rawText.trim();
 
             ParagraphMatch match = new ParagraphMatch();
             match.setIndex(i);
-            match.setText(text.length() > 200 ? text.substring(0, 200) : text);
+            match.setText(displayText.length() > 200 ? displayText.substring(0, 200) : displayText);
             match.setStartOffset(cumulativeOffset);
-            match.setEndOffset(cumulativeOffset + text.length());
-            cumulativeOffset += text.length();
+            match.setEndOffset(cumulativeOffset + rawText.length());
+            cumulativeOffset += rawText.length();
+
+            if (displayText.isEmpty()) {
+                continue;
+            }
 
             // 匹配优先级：SPECIAL > COVER > TOC > TITLE > BODY
             boolean matched = false;
@@ -57,7 +62,7 @@ public class RecognitionEngine {
                     if (cfg.getIsActive() != null && cfg.getIsActive() == 0) {
                         continue; // 跳过已停用的配置
                     }
-                    if (matchPattern(text, cfg.getPattern())) {
+                    if (matchPattern(displayText, cfg.getPattern())) {
                         match.setMatchedType(MatchedType.valueOf(type));
                         match.setRuleId(cfg.getRuleId());
                         if ("SPECIAL".equals(type)) {

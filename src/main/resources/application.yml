@@ -30,15 +30,11 @@ spring:
 # PDF 预览配置
 template:
   pdf:
-    converter: poi
     font:
       path: 'C:\Windows\Fonts\simhei.ttf'
-    libreoffice:
-      path: soffice
-      timeout-seconds: 30
     cache:
       enabled: true
-      ttl-minutes: 5
+      ttl-minutes: 10
 
 mybatis-plus:
   mapper-locations: classpath:mapper/*.xml

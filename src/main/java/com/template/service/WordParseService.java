@@ -245,7 +245,11 @@ public class WordParseService {
 
             // 确定底色
             TemplateRule rule = match.getRuleId() != null ? ruleMap.get(match.getRuleId()) : null;
-            item.setBackgroundColor(determineBackgroundColor(match.getRuleId(), rule));
+            if (match.getMatchedType() == RecognitionEngine.MatchedType.UNKNOWN) {
+                item.setBackgroundColor(null);
+            } else {
+                item.setBackgroundColor(determineBackgroundColor(match.getRuleId(), rule));
+            }
 
             items.add(item);
         }
@@ -258,6 +262,7 @@ public class WordParseService {
         }
 
         // 生成 PDF 段落位置信息（用于前端精确高亮）
+        int totalPdfChars = 0;
         try {
             List<PdfParagraphPosition> pdfPositions = new ArrayList<>();
             pdfConversionService.convertToPdfWithPositions(uf.getOriginalContent(), uf.getOriginalName(), pdfPositions);
@@ -272,12 +277,19 @@ public class WordParseService {
                     item.setPdfEndPos(pos.getPdfEndPos());
                 }
             }
+
+            for (PdfParagraphPosition pos : pdfPositions) {
+                if (pos.getPdfEndPos() > totalPdfChars) {
+                    totalPdfChars = pos.getPdfEndPos();
+                }
+            }
         } catch (Exception e) {
             log.warn("PDF 位置生成失败，高亮将使用比例估算: fileId={}", fileId, e);
         }
 
         // 组装结果
         PreviewResultDTO result = new PreviewResultDTO();
+        result.setTotalPdfChars(totalPdfChars);
         result.setTemplateId(uf.getTemplateId());
         result.setTemplateName(templateName);
         result.setPdfUrl("/api/word/" + fileId + "/preview/pdf");
