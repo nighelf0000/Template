@@ -730,7 +730,7 @@ public class PoiPdfConversionService implements PdfConversionService {
     }
 
     /**
-     * 将 CSS 颜色值（如 #ff0000 或 hsl(h, 60%, 85%)）转换为 AWT Color。
+     * 将 CSS 颜色值（如 #ff0000 / ff0000 / hsl(h, 60%, 85%)）转换为 AWT Color。
      * 解析失败时返回 null。
      */
     private Color parseColor(String colorStr) {
@@ -740,6 +740,9 @@ public class PoiPdfConversionService implements PdfConversionService {
                 return Color.decode(colorStr);
             } else if (colorStr.startsWith("hsl")) {
                 return parseHsl(colorStr);
+            } else if (colorStr.matches("[0-9a-fA-F]{6}")) {
+                // 兼容无 # 前缀的十六进制颜色
+                return Color.decode("#" + colorStr);
             }
         } catch (Exception e) {
             log.warn("颜色解析失败: {}", colorStr, e);
