@@ -386,29 +386,96 @@ public class WordParseService {
      */
     private String determineBackgroundColor(Long ruleId, TemplateRule rule) {
         if (rule != null && rule.getHighlightColor() != null && !rule.getHighlightColor().isEmpty()) {
-            String color = rule.getHighlightColor();
-            // 规范化十六进制颜色：确保有 # 前缀
-            if (color.matches("[0-9a-fA-F]{6}")) {
-                color = "#" + color;
+            String color = rule.getHighlightColor().trim();
+            if (!color.startsWith("#")) {
+                if (color.matches("[0-9a-fA-F]{6}")) {
+                    color = "#" + color;
+                } else if (color.matches("[0-9a-fA-F]{8}")) {
+                    color = "#" + color;
+                }
             }
+            if (color.startsWith("#")) {
+                color = hexToHsl(color);
+            }
+            log.debug("determineBackgroundColor: ruleId={} 使用 highlightColor={}", ruleId, color);
             return color;
         }
-        // 降级：rule 为 null 但 ruleId 有值，尝试从数据库查询
         if (rule == null && ruleId != null) {
             TemplateRule dbRule = templateRuleMapper.selectById(ruleId);
             if (dbRule != null && dbRule.getHighlightColor() != null && !dbRule.getHighlightColor().isEmpty()) {
-                String color = dbRule.getHighlightColor();
-                if (color.matches("[0-9a-fA-F]{6}")) {
-                    color = "#" + color;
+                String color = dbRule.getHighlightColor().trim();
+                if (!color.startsWith("#")) {
+                    if (color.matches("[0-9a-fA-F]{6}")) {
+                        color = "#" + color;
+                    } else if (color.matches("[0-9a-fA-F]{8}")) {
+                        color = "#" + color;
+                    }
                 }
+                if (color.startsWith("#")) {
+                    color = hexToHsl(color);
+                }
+                log.debug("determineBackgroundColor: ruleId={} 从DB降级查到 highlightColor={}", ruleId, color);
                 return color;
             }
         }
         if (ruleId != null) {
             int hue = (int) ((ruleId * 137.508) % 360);
-            return String.format("hsl(%d, 60%%, 85%%)", hue);
+            String autoColor = String.format("hsl(%d, 60%%, 85%%)", hue);
+            log.debug("determineBackgroundColor: ruleId={} 无highlightColor，自动生成 HSL={}", ruleId, autoColor);
+            return autoColor;
         }
+        log.debug("determineBackgroundColor: ruleId 为 null，返回 null");
         return null;
+    }
+
+    /**
+     * 将十六进制颜色(#RRGGBB 或 #RRGGBBAA)转换为 HSL 格式。
+     */
+    private String hexToHsl(String hex) {
+        if (hex.startsWith("#")) {
+            hex = hex.substring(1);
+        }
+        if (hex.length() >= 6) {
+            hex = hex.substring(0, 6);
+        } else {
+            return hex;
+        }
+        try {
+            int r = Integer.parseInt(hex.substring(0, 2), 16);
+            int g = Integer.parseInt(hex.substring(2, 4), 16);
+            int b = Integer.parseInt(hex.substring(4, 6), 16);
+
+            float rf = r / 255f;
+            float gf = g / 255f;
+            float bf = b / 255f;
+
+            float max = Math.max(rf, Math.max(gf, bf));
+            float min = Math.min(rf, Math.min(gf, bf));
+            float delta = max - min;
+
+            float h = 0;
+            float l = (max + min) / 2;
+            float s = 0;
+
+            if (delta != 0) {
+                s = l > 0.5f ? delta / (2 - max - min) : delta / (max + min);
+                if (max == rf) {
+                    h = ((gf - bf) / delta) % 6;
+                } else if (max == gf) {
+                    h = (bf - rf) / delta + 2;
+                } else {
+                    h = (rf - gf) / delta + 4;
+                }
+                h *= 60;
+                if (h < 0) h += 360;
+            }
+
+            return String.format("hsl(%d, %d%%, %d%%)",
+                    Math.round(h), Math.round(s * 100), Math.round(l * 100));
+        } catch (NumberFormatException e) {
+            log.warn("hexToHsl 转换失败: hex={}", hex, e);
+            return "#" + hex;
+        }
     }
 
     /**
