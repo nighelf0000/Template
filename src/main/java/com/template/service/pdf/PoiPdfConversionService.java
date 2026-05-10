@@ -735,6 +735,7 @@ public class PoiPdfConversionService implements PdfConversionService {
      */
     private Color parseColor(String colorStr) {
         if (colorStr == null || colorStr.isEmpty()) return null;
+        colorStr = colorStr.trim();
         try {
             if (colorStr.startsWith("#")) {
                 return Color.decode(colorStr);
