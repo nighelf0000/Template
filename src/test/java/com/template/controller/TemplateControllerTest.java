@@ -20,6 +20,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
@@ -68,7 +69,7 @@ class TemplateControllerTest {
         sampleRule.setTemplateId(1L);
         sampleRule.setName("正文样式");
         sampleRule.setFontName("宋体");
-        sampleRule.setFontSize(12);
+        sampleRule.setFontSize(new BigDecimal(12));
 
         sampleEngineDTO = new EngineConfigDTO();
         sampleEngineDTO.setId(100L);
@@ -273,7 +274,7 @@ class TemplateControllerTest {
         rule2.setId(11L);
         rule2.setTemplateId(1L);
         rule2.setName("标题样式");
-        rule2.setFontSize(16);
+        rule2.setFontSize(new BigDecimal(16));
 
         when(templateService.listRules(1L)).thenReturn(List.of(sampleRule, rule2));
 
@@ -292,7 +293,7 @@ class TemplateControllerTest {
         updated.setId(10L);
         updated.setTemplateId(1L);
         updated.setName("更新后的规则");
-        updated.setFontSize(14);
+        updated.setFontSize(new BigDecimal(14));
 
         when(templateService.updateRule(eq(10L), any(TemplateRuleDTO.class))).thenReturn(updated);
 

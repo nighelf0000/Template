@@ -1,5 +1,5 @@
 import request from './request'
-import type { TemplateConfig, TemplateRule, EngineConfig, PageResult } from '@/types/api'
+import type { TemplateConfig, TemplateRule, EngineConfig, PageResult, SmartMatchTask, SmartMatchRule, SmartMatchTestResult } from '@/types/api'
 
 // 分页查询模板列表
 export function getTemplateList(params: { page?: number; size?: number }) {
@@ -88,4 +88,55 @@ export function updateEngineConfig(templateId: number, id: number, data: EngineC
 // 删除引擎配置
 export function deleteEngineConfig(templateId: number, id: number) {
   return request.delete<any, void>(`/template/${templateId}/engine-config/${id}`)
+}
+
+// ========== 智能匹配 API ==========
+
+// 触发智能匹配训练
+export function startSmartTrain(templateId: number, data?: { taskName?: string }) {
+  return request.post<any, SmartMatchTask>(`/smart-match/${templateId}/train`, data || {})
+}
+
+// 查询训练任务列表（分页）
+export function getSmartTaskList(templateId: number, params?: { page?: number; size?: number }) {
+  return request.get<any, PageResult<SmartMatchTask>>(`/smart-match/${templateId}/tasks`, { params })
+}
+
+// 查询训练任务详情
+export function getSmartTaskDetail(templateId: number, taskId: number) {
+  return request.get<any, SmartMatchTask>(`/smart-match/${templateId}/tasks/${taskId}`)
+}
+
+// 查询智能匹配规则列表（分页）
+export function getSmartRuleList(templateId: number, params?: { page?: number; size?: number }) {
+  return request.get<any, PageResult<SmartMatchRule>>(`/smart-match/${templateId}/rules`, { params })
+}
+
+// 切换规则启用状态
+export function toggleSmartRule(templateId: number, ruleId: number) {
+  return request.put<any, void>(`/smart-match/${templateId}/rules/${ruleId}/toggle`)
+}
+
+// 编辑智能匹配规则
+export function updateSmartRule(templateId: number, ruleId: number, data: Partial<SmartMatchRule>) {
+  return request.put<any, SmartMatchRule>(`/smart-match/${templateId}/rules/${ruleId}`, data)
+}
+
+// 删除智能匹配规则
+export function deleteSmartRule(templateId: number, ruleId: number) {
+  return request.delete<any, void>(`/smart-match/${templateId}/rules/${ruleId}`)
+}
+
+// 测试智能匹配
+export function testSmartMatch(templateId: number, file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return request.post<any, SmartMatchTestResult[]>(`/smart-match/${templateId}/test`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}
+
+// 查询模板的智能匹配规则列表（不分页，通过 TemplateController）
+export function getSmartRulesByTemplate(templateId: number) {
+  return request.get<any, SmartMatchRule[]>(`/template/${templateId}/smart-rules`)
 }

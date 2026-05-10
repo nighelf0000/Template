@@ -89,3 +89,49 @@ CREATE TABLE IF NOT EXISTS user_upload_file (
     INDEX idx_created_at (created_at),
     CONSTRAINT fk_file_template FOREIGN KEY (template_id) REFERENCES template_config(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户上传文件表';
+
+-- 5. 智能匹配训练任务表
+CREATE TABLE IF NOT EXISTS smart_match_task (
+    id              BIGINT        NOT NULL AUTO_INCREMENT  COMMENT '主键ID',
+    template_id     BIGINT        NOT NULL                 COMMENT '关联模板ID',
+    task_name       VARCHAR(200)  NOT NULL                 COMMENT '任务名称',
+    status          VARCHAR(20)   NOT NULL DEFAULT 'PENDING' COMMENT '任务状态：PENDING/RUNNING/SUCCESS/FAILED',
+    progress        INT           NOT NULL DEFAULT 0       COMMENT '处理进度(0-100)',
+    file_count      INT           NOT NULL DEFAULT 0       COMMENT '训练文件数',
+    error_message   VARCHAR(2000) DEFAULT NULL             COMMENT '错误信息',
+    rule_count      INT           DEFAULT NULL             COMMENT '生成的规则数量',
+    started_at      DATETIME      DEFAULT NULL             COMMENT '开始训练时间',
+    completed_at    DATETIME      DEFAULT NULL             COMMENT '完成时间',
+    created_at      DATETIME      NOT NULL DEFAULT NOW()   COMMENT '创建时间',
+    updated_at      DATETIME      NOT NULL DEFAULT NOW() ON UPDATE NOW() COMMENT '最后修改时间',
+    PRIMARY KEY (id),
+    INDEX idx_smt_template_id (template_id),
+    INDEX idx_smt_status (status),
+    CONSTRAINT fk_smt_template FOREIGN KEY (template_id) REFERENCES template_config(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='智能匹配训练任务表';
+
+-- 6. 智能匹配规则表
+CREATE TABLE IF NOT EXISTS smart_match_rule (
+    id              BIGINT        NOT NULL AUTO_INCREMENT  COMMENT '主键ID',
+    template_id     BIGINT        NOT NULL                 COMMENT '关联模板ID',
+    task_id         BIGINT        DEFAULT NULL             COMMENT '来源训练任务ID',
+    rule_name       VARCHAR(200)  NOT NULL                 COMMENT '规则名称',
+    match_type      VARCHAR(20)   NOT NULL DEFAULT 'TITLE' COMMENT '匹配类型：COVER/TOC/TITLE/BODY',
+    match_level     INT           DEFAULT NULL             COMMENT '标题级别（TITLE专用）',
+    keywords        TEXT          NOT NULL                 COMMENT '关键词/特征描述',
+    feature_vector  MEDIUMTEXT    NOT NULL                 COMMENT 'TF-IDF特征向量JSON',
+    style_rule_id   BIGINT        DEFAULT NULL             COMMENT '关联样式规则ID(template_rule)',
+    threshold       DECIMAL(5,4)  NOT NULL DEFAULT 0.3000  COMMENT '相似度阈值(0-1)',
+    is_active       TINYINT       NOT NULL DEFAULT 1       COMMENT '是否启用：1=启用, 0=停用',
+    match_order     INT           NOT NULL DEFAULT 0       COMMENT '匹配顺序',
+    created_at      DATETIME      NOT NULL DEFAULT NOW()   COMMENT '创建时间',
+    updated_at      DATETIME      NOT NULL DEFAULT NOW() ON UPDATE NOW() COMMENT '最后修改时间',
+    PRIMARY KEY (id),
+    INDEX idx_smr_template_id (template_id),
+    INDEX idx_smr_task_id (task_id),
+    INDEX idx_smr_match_type (match_type),
+    INDEX idx_smr_is_active (is_active),
+    CONSTRAINT fk_smr_template FOREIGN KEY (template_id) REFERENCES template_config(id) ON DELETE CASCADE,
+    CONSTRAINT fk_smr_task FOREIGN KEY (task_id) REFERENCES smart_match_task(id) ON DELETE SET NULL,
+    CONSTRAINT fk_smr_rule FOREIGN KEY (style_rule_id) REFERENCES template_rule(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='智能匹配规则表';

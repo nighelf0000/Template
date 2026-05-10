@@ -65,9 +65,7 @@ public class RecognitionEngine {
                     if (matchPattern(displayText, cfg.getPattern())) {
                         match.setMatchedType(MatchedType.valueOf(type));
                         match.setRuleId(cfg.getRuleId());
-                        if ("SPECIAL".equals(type)) {
-                            match.setMatchedEngineConfigId(cfg.getId());
-                        }
+                        match.setMatchedEngineConfigId(cfg.getId());
                         if ("TITLE".equals(type) && cfg.getMatchLevel() != null) {
                             match.setMatchedLevel(cfg.getMatchLevel());
                         } else {

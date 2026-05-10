@@ -9,7 +9,7 @@ public class TemplateRuleDTO {
     private Long templateId;
     private String name;
     private String fontName;
-    private Integer fontSize;
+    private BigDecimal fontSize;
     private Integer fontBold;
     private Integer fontItalic;
     private Integer fontUnderline;

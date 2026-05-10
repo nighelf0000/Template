@@ -104,3 +104,47 @@ export interface PageResult<T> {
   current: number
   pages: number
 }
+
+// ====== 智能匹配相关类型 ======
+
+export interface SmartMatchTask {
+  id?: number
+  templateId?: number
+  taskName: string
+  status: string
+  progress?: number
+  fileCount?: number
+  errorMessage?: string
+  ruleCount?: number
+  startedAt?: string
+  completedAt?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface SmartMatchRule {
+  id?: number
+  templateId?: number
+  taskId?: number
+  ruleName: string
+  matchType: string
+  matchLevel?: number
+  keywords?: string
+  featureVector?: string
+  styleRuleId?: number
+  threshold?: number
+  isActive?: number
+  matchOrder?: number
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface SmartMatchTestResult {
+  paragraphIndex: number
+  text: string
+  matchedType: string
+  matchLevel?: number
+  styleRuleId?: number
+  ruleName?: string
+  confidence: number
+}

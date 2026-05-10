@@ -164,4 +164,17 @@ public class TemplateController {
         templateService.deleteEngineConfig(id);
         return ApiResponse.ok(null);
     }
+
+    // ========== 智能匹配规则查询 ==========
+
+    /**
+     * 查询模板的智能匹配规则列表（不分页）
+     * GET /api/template/{templateId}/smart-rules
+     */
+    @GetMapping("/{templateId}/smart-rules")
+    public ApiResponse<List<com.template.entity.SmartMatchRule>> listSmartRules(@PathVariable Long templateId) {
+        log.info("查询智能匹配规则列表: templateId={}", templateId);
+        List<com.template.entity.SmartMatchRule> rules = templateService.listSmartRules(templateId);
+        return ApiResponse.ok(rules);
+    }
 }

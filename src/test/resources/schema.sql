@@ -77,3 +77,45 @@ CREATE TABLE IF NOT EXISTS user_upload_file (
 CREATE INDEX IF NOT EXISTS idx_template_id ON user_upload_file(template_id);
 CREATE INDEX IF NOT EXISTS idx_status ON user_upload_file(status);
 CREATE INDEX IF NOT EXISTS idx_created_at ON user_upload_file(created_at);
+
+-- 5. 智能匹配训练任务表
+CREATE TABLE IF NOT EXISTS smart_match_task (
+    id              BIGINT        NOT NULL AUTO_INCREMENT,
+    template_id     BIGINT        NOT NULL,
+    task_name       VARCHAR(200)  NOT NULL,
+    status          VARCHAR(20)   NOT NULL DEFAULT 'PENDING',
+    progress        INT           NOT NULL DEFAULT 0,
+    file_count      INT           NOT NULL DEFAULT 0,
+    error_message   VARCHAR(2000) DEFAULT NULL,
+    rule_count      INT           DEFAULT NULL,
+    started_at      DATETIME      DEFAULT NULL,
+    completed_at    DATETIME      DEFAULT NULL,
+    created_at      DATETIME      NOT NULL DEFAULT NOW(),
+    updated_at      DATETIME      NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id)
+);
+CREATE INDEX IF NOT EXISTS idx_smt_template_id ON smart_match_task(template_id);
+CREATE INDEX IF NOT EXISTS idx_smt_status ON smart_match_task(status);
+
+-- 6. 智能匹配规则表
+CREATE TABLE IF NOT EXISTS smart_match_rule (
+    id              BIGINT        NOT NULL AUTO_INCREMENT,
+    template_id     BIGINT        NOT NULL,
+    task_id         BIGINT        DEFAULT NULL,
+    rule_name       VARCHAR(200)  NOT NULL,
+    match_type      VARCHAR(20)   NOT NULL DEFAULT 'TITLE',
+    match_level     INT           DEFAULT NULL,
+    keywords        TEXT          NOT NULL,
+    feature_vector  TEXT          NOT NULL,
+    style_rule_id   BIGINT        DEFAULT NULL,
+    threshold       DECIMAL(5,4)  NOT NULL DEFAULT 0.3000,
+    is_active       TINYINT       NOT NULL DEFAULT 1,
+    match_order     INT           NOT NULL DEFAULT 0,
+    created_at      DATETIME      NOT NULL DEFAULT NOW(),
+    updated_at      DATETIME      NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id)
+);
+CREATE INDEX IF NOT EXISTS idx_smr_template_id ON smart_match_rule(template_id);
+CREATE INDEX IF NOT EXISTS idx_smr_task_id ON smart_match_rule(task_id);
+CREATE INDEX IF NOT EXISTS idx_smr_match_type ON smart_match_rule(match_type);
+CREATE INDEX IF NOT EXISTS idx_smr_is_active ON smart_match_rule(is_active);

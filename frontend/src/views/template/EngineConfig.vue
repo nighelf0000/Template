@@ -28,56 +28,67 @@
     <el-card v-if="selectedTemplateId" style="margin-top: 20px">
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center">
-          <span>正则表达式配置列表</span>
-          <el-button type="primary" size="small" @click="openCreateDialog">新增配置</el-button>
+          <div style="display: flex; align-items: center; gap: 16px">
+            <span>{{ matchMode === 'REGEX' ? '正则表达式配置列表' : '智能匹配规则列表' }}</span>
+            <el-radio-group v-model="matchMode" size="small">
+              <el-radio-button value="REGEX">正则匹配</el-radio-button>
+              <el-radio-button value="SMART">智能匹配</el-radio-button>
+            </el-radio-group>
+          </div>
+          <el-button v-if="matchMode === 'REGEX'" type="primary" size="small" @click="openCreateDialog">新增配置</el-button>
         </div>
       </template>
 
-      <el-table :data="configList" stripe style="width: 100%">
-        <el-table-column prop="configName" label="名称" min-width="120" />
-        <el-table-column prop="pattern" label="正则表达式" min-width="200">
-          <template #default="{ row }">
-            <el-tooltip :content="row.pattern" placement="top" :show-after="500">
-              <span>{{ row.pattern && row.pattern.length > 40 ? row.pattern.substring(0, 40) + '...' : row.pattern }}</span>
-            </el-tooltip>
-          </template>
-        </el-table-column>
-        <el-table-column prop="matchType" label="匹配类型" width="100">
-          <template #default="{ row }">
-            <el-tag :type="matchTypeTag(row.matchType)" size="small">{{ row.matchType }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="matchLevel" label="标题级别" width="80" align="center" />
-        <el-table-column prop="ruleName" label="关联样式" min-width="120" />
-        <el-table-column prop="sortOrder" label="排序" width="60" align="center" />
-        <el-table-column prop="isActive" label="状态" width="70" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.isActive === 1 ? 'success' : 'info'" size="small">
-              {{ row.isActive === 1 ? '启用' : '停用' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right">
-          <template #default="{ row }">
-            <el-button size="small" @click="openEditDialog(row)">编辑</el-button>
-            <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+      <template v-if="matchMode === 'REGEX'">
+        <el-table :data="configList" stripe style="width: 100%">
+          <el-table-column prop="configName" label="名称" min-width="120" />
+          <el-table-column prop="pattern" label="正则表达式" min-width="200">
+            <template #default="{ row }">
+              <el-tooltip :content="row.pattern" placement="top" :show-after="500">
+                <span>{{ row.pattern && row.pattern.length > 40 ? row.pattern.substring(0, 40) + '...' : row.pattern }}</span>
+              </el-tooltip>
+            </template>
+          </el-table-column>
+          <el-table-column prop="matchType" label="匹配类型" width="100">
+            <template #default="{ row }">
+              <el-tag :type="matchTypeTag(row.matchType)" size="small">{{ row.matchType }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="matchLevel" label="标题级别" width="80" align="center" />
+          <el-table-column prop="ruleName" label="关联样式" min-width="120" />
+          <el-table-column prop="sortOrder" label="排序" width="60" align="center" />
+          <el-table-column prop="isActive" label="状态" width="70" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.isActive === 1 ? 'success' : 'info'" size="small">
+                {{ row.isActive === 1 ? '启用' : '停用' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="160" fixed="right">
+            <template #default="{ row }">
+              <el-button size="small" @click="openEditDialog(row)">编辑</el-button>
+              <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
 
-      <div v-if="total > 0" style="margin-top: 16px; display: flex; justify-content: center">
-        <el-pagination
-          v-model:current-page="currentPage"
-          v-model:page-size="pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="loadConfigList"
-          @size-change="loadConfigList"
-        />
-      </div>
+        <div v-if="total > 0" style="margin-top: 16px; display: flex; justify-content: center">
+          <el-pagination
+            v-model:current-page="currentPage"
+            v-model:page-size="pageSize"
+            :total="total"
+            :page-sizes="[10, 20, 50]"
+            layout="total, sizes, prev, pager, next"
+            @current-change="loadConfigList"
+            @size-change="loadConfigList"
+          />
+        </div>
 
-      <el-empty v-if="!configList.length" description="暂无引擎配置，请点击上方「新增配置」按钮添加" />
+        <el-empty v-if="!configList.length" description="暂无引擎配置，请点击上方「新增配置」按钮添加" />
+      </template>
+
+      <!-- 智能匹配面板 -->
+      <SmartMatchPanel v-if="matchMode === 'SMART'" :selected-template-id="selectedTemplateId" />
     </el-card>
 
     <!-- 新增/编辑对话框 -->
@@ -143,6 +154,7 @@ import {
   getRuleList
 } from '@/api/template'
 import type { TemplateConfig, EngineConfig, TemplateRule } from '@/types/api'
+import SmartMatchPanel from './SmartMatchPanel.vue'
 
 const route = useRoute()
 const loading = ref(false)
@@ -158,8 +170,9 @@ const dialogVisible = ref(false)
 const isEditing = ref(false)
 const editingId = ref<number | null>(null)
 const formRef = ref<any>(null)
+const matchMode = ref<'REGEX' | 'SMART'>('REGEX')
 
-const defaultForm = (): EngineConfig => ({
+const defaultForm = (): any => ({
   configName: '',
   pattern: '',
   matchType: 'COVER',
@@ -169,7 +182,7 @@ const defaultForm = (): EngineConfig => ({
   isActive: 1
 })
 
-const formData = reactive<EngineConfig>(defaultForm())
+const formData = reactive<any>(defaultForm())
 
 const formRules = {
   configName: [{ required: true, message: '请输入配置名称', trigger: 'blur' }],

@@ -8,8 +8,8 @@ import com.template.dto.LegendItemDTO;
 import com.template.dto.ParagraphItemDTO;
 import com.template.dto.PdfParagraphPosition;
 import com.template.dto.PreviewResultDTO;
+import com.template.dto.SmartMatchTestResultDTO;
 import com.template.entity.*;
-import com.template.service.WordParseService;
 import com.template.service.pdf.PdfConversionService;
 import com.template.util.ParagraphStyleExtractor;
 import com.template.mapper.*;
@@ -23,6 +23,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -551,23 +552,32 @@ public class WordParseService {
 
             backfillFromManualAdjust(matches, rules);
 
-            // 处理 SPECIAL/UNKNOWN 段落的引擎配置创建或更新
+            // 处理段落调整：先查 ruleId 是否有对应的 engine_config，有则同步匹配信息，无则走 SPECIAL 逻辑
             for (RecognitionEngine.ParagraphMatch match : matches) {
                 if (match.getRuleId() == null || match.getText() == null || match.getText().isEmpty()) {
                     continue;
                 }
-                if (match.getMatchedType() == RecognitionEngine.MatchedType.SPECIAL) {
-                    // SPECIAL 段落：更新已有配置
-                    if (match.getMatchedEngineConfigId() != null) {
-                        updateSpecialConfig(match.getMatchedEngineConfigId(), match.getText(), match.getRuleId());
-                    } else {
-                        // 兼容旧数据：matchedEngineConfigId 为 null 时降级为按文本查找
-                        updateSpecialConfigByTemplateAndText(uf.getTemplateId(), match.getText(), match.getRuleId());
+
+                EngineConfig existingConfig = findEngineConfigByRuleId(uf.getTemplateId(), match.getRuleId());
+                if (existingConfig != null) {
+                    // 有对应 engine_config，同步更新 matchedEngineConfigId、matchedType、matchedLevel
+                    match.setMatchedEngineConfigId(existingConfig.getId());
+                    match.setMatchedType(RecognitionEngine.MatchedType.valueOf(existingConfig.getMatchType()));
+                    if (existingConfig.getMatchLevel() != null) {
+                        match.setMatchedLevel(existingConfig.getMatchLevel());
                     }
-                } else if (match.getMatchedType() == RecognitionEngine.MatchedType.UNKNOWN) {
-                    // UNKNOWN 段落：创建或更新配置
-                    autoCreateOrUpdateSpecialConfig(uf.getTemplateId(), match.getText(), match.getRuleId());
-                    match.setMatchedType(RecognitionEngine.MatchedType.SPECIAL);
+                } else {
+                    // 无对应 engine_config，走 SPECIAL/UNKNOWN 创建或更新逻辑
+                    if (match.getMatchedType() == RecognitionEngine.MatchedType.SPECIAL) {
+                        if (match.getMatchedEngineConfigId() != null) {
+                            updateSpecialConfig(match.getMatchedEngineConfigId(), match.getText(), match.getRuleId());
+                        } else {
+                            updateSpecialConfigByTemplateAndText(uf.getTemplateId(), match.getText(), match.getRuleId());
+                        }
+                    } else if (match.getMatchedType() == RecognitionEngine.MatchedType.UNKNOWN) {
+                        autoCreateOrUpdateSpecialConfig(uf.getTemplateId(), match.getText(), match.getRuleId());
+                        match.setMatchedType(RecognitionEngine.MatchedType.SPECIAL);
+                    }
                 }
             }
 
@@ -632,6 +642,18 @@ public class WordParseService {
             cleanText = cleanText.substring(0, 10);
         }
         return "特殊样式" + cleanText;
+    }
+
+    /**
+     * 按模板ID和规则ID查找对应的引擎配置（优先取排序靠前的）。
+     */
+    private EngineConfig findEngineConfigByRuleId(Long templateId, Long ruleId) {
+        LambdaQueryWrapper<EngineConfig> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(EngineConfig::getTemplateId, templateId)
+               .eq(EngineConfig::getRuleId, ruleId)
+               .orderByAsc(EngineConfig::getSortOrder);
+        List<EngineConfig> configs = engineConfigMapper.selectList(wrapper);
+        return configs.isEmpty() ? null : configs.get(0);
     }
 
     /**
@@ -748,7 +770,7 @@ public class WordParseService {
             // 应用字体和段落样式
             for (XWPFRun run : paragraph.getRuns()) {
                 if (rule.getFontName() != null) run.setFontFamily(rule.getFontName());
-                if (rule.getFontSize() != null) run.setFontSize(rule.getFontSize());
+                if (rule.getFontSize() != null) run.setFontSize(rule.getFontSize().doubleValue());
                 if (rule.getFontBold() != null) run.setBold(rule.getFontBold() == 1);
                 if (rule.getFontItalic() != null) run.setItalic(rule.getFontItalic() == 1);
                 if (rule.getFontUnderline() != null)
@@ -842,5 +864,111 @@ public class WordParseService {
         }
         uploadFileMapper.deleteById(id);
         log.info("文件已删除: id={}", id);
+    }
+
+    // ========== 智能匹配集成 ==========
+
+    /**
+     * 使用智能匹配规则对 Word 文件进行段落识别（供 SmartMatchService 测试调用）
+     * 解析文件并通过 matchMode 判断使用智能匹配还是正则匹配
+     */
+    public List<SmartMatchTestResultDTO> smartMatchRecognize(
+            Long templateId, MultipartFile file, List<SmartMatchRule> smartRules) throws IOException {
+
+        List<SmartMatchTestResultDTO> results = new ArrayList<>();
+        List<XWPFParagraph> paragraphs;
+
+        try (XWPFDocument doc = new XWPFDocument(file.getInputStream())) {
+            paragraphs = doc.getParagraphs();
+        }
+
+        // 获取关联样式规则名称
+        Map<Long, String> ruleNameMap = new LinkedHashMap<>();
+        java.util.Set<Long> styleRuleIds = new HashSet<>();
+        for (SmartMatchRule rule : smartRules) {
+            if (rule.getStyleRuleId() != null) {
+                styleRuleIds.add(rule.getStyleRuleId());
+            }
+        }
+        if (!styleRuleIds.isEmpty()) {
+            List<TemplateRule> templateRules = templateRuleMapper.selectBatchIds(styleRuleIds);
+            for (TemplateRule tr : templateRules) {
+                ruleNameMap.put(tr.getId(), tr.getName());
+            }
+        }
+
+        for (int i = 0; i < paragraphs.size(); i++) {
+            String text = paragraphs.get(i).getText();
+            if (text == null) text = "";
+            text = text.trim();
+
+            SmartMatchTestResultDTO result = new SmartMatchTestResultDTO();
+            result.setParagraphIndex(i);
+            result.setText(text.length() > 200 ? text.substring(0, 200) : text);
+
+            if (text.isEmpty()) {
+                result.setMatchedType("UNKNOWN");
+                result.setConfidence(0);
+                results.add(result);
+                continue;
+            }
+
+            // 遍历智能匹配规则进行匹配
+            double bestConfidence = 0;
+            SmartMatchRule bestRule = null;
+
+            for (SmartMatchRule rule : smartRules) {
+                if (rule.getIsActive() != null && rule.getIsActive() == 0) {
+                    continue;
+                }
+                double confidence = calculateSmartSimilarity(text, rule);
+                if (confidence > bestConfidence) {
+                    bestConfidence = confidence;
+                    bestRule = rule;
+                }
+            }
+
+            BigDecimal threshold = bestRule != null && bestRule.getThreshold() != null
+                    ? bestRule.getThreshold() : BigDecimal.valueOf(0.3);
+
+            if (bestRule != null && bestConfidence >= threshold.doubleValue()) {
+                result.setMatchedType(bestRule.getMatchType());
+                result.setMatchLevel(bestRule.getMatchLevel());
+                result.setStyleRuleId(bestRule.getStyleRuleId());
+                result.setRuleName(ruleNameMap.get(bestRule.getStyleRuleId()));
+                result.setConfidence(bestConfidence);
+            } else {
+                result.setMatchedType("UNKNOWN");
+                result.setConfidence(bestConfidence);
+            }
+
+            results.add(result);
+        }
+
+        return results;
+    }
+
+    /**
+     * 计算文本与智能规则的相似度（基于关键词匹配）
+     */
+    private double calculateSmartSimilarity(String text, SmartMatchRule rule) {
+        if (rule.getKeywords() == null || rule.getKeywords().isBlank()) {
+            return 0;
+        }
+
+        String[] keywords = rule.getKeywords().split(",");
+        if (keywords.length == 0) {
+            return 0;
+        }
+
+        int matchCount = 0;
+        for (String keyword : keywords) {
+            String kw = keyword.trim();
+            if (!kw.isEmpty() && text.contains(kw)) {
+                matchCount++;
+            }
+        }
+
+        return (double) matchCount / keywords.length;
     }
 }

@@ -36,6 +36,14 @@ template:
       enabled: true
       ttl-minutes: 10
 
+  # 智能匹配算法配置
+  smart-match:
+    async: true                    # true=异步(默认) false=同步
+    python-path: python
+    script-path: python/smart_train.py
+    training-timeout-minutes: 10
+    batch-size: 50
+
 mybatis-plus:
   mapper-locations: classpath:mapper/*.xml
   type-aliases-package: com.template.entity

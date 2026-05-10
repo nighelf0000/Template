@@ -6,9 +6,11 @@ import com.template.dto.EngineConfigDTO;
 import com.template.dto.TemplateConfigDTO;
 import com.template.dto.TemplateRuleDTO;
 import com.template.entity.EngineConfig;
+import com.template.entity.SmartMatchRule;
 import com.template.entity.TemplateConfig;
 import com.template.entity.TemplateRule;
 import com.template.mapper.EngineConfigMapper;
+import com.template.mapper.SmartMatchRuleMapper;
 import com.template.mapper.TemplateConfigMapper;
 import com.template.mapper.TemplateRuleMapper;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +30,7 @@ public class TemplateService {
     private final TemplateConfigMapper templateConfigMapper;
     private final TemplateRuleMapper templateRuleMapper;
     private final EngineConfigMapper engineConfigMapper;
+    private final SmartMatchRuleMapper smartMatchRuleMapper;
 
     public Page<TemplateConfig> list(int page, int size) {
         LambdaQueryWrapper<TemplateConfig> wrapper = new LambdaQueryWrapper<>();
@@ -290,5 +293,17 @@ public class TemplateService {
     @Transactional
     public void deleteEngineConfig(Long id) {
         engineConfigMapper.deleteById(id);
+    }
+
+    // ---- 智能匹配规则查询 ----
+
+    /**
+     * 查询模板的智能匹配规则列表（不分页）
+     */
+    public List<SmartMatchRule> listSmartRules(Long templateId) {
+        LambdaQueryWrapper<SmartMatchRule> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(SmartMatchRule::getTemplateId, templateId)
+                .orderByAsc(SmartMatchRule::getMatchOrder);
+        return smartMatchRuleMapper.selectList(wrapper);
     }
 }

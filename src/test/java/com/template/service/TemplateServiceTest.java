@@ -9,6 +9,7 @@ import com.template.entity.EngineConfig;
 import com.template.entity.TemplateConfig;
 import com.template.entity.TemplateRule;
 import com.template.mapper.EngineConfigMapper;
+import com.template.mapper.SmartMatchRuleMapper;
 import com.template.mapper.TemplateConfigMapper;
 import com.template.mapper.TemplateRuleMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +46,9 @@ class TemplateServiceTest {
     @Mock
     private EngineConfigMapper engineConfigMapper;
 
+    @Mock
+    private SmartMatchRuleMapper smartMatchRuleMapper;
+
     private TemplateService templateService;
 
     @Captor
@@ -58,7 +62,7 @@ class TemplateServiceTest {
 
     @BeforeEach
     void setUp() {
-        templateService = new TemplateService(templateConfigMapper, templateRuleMapper, engineConfigMapper);
+        templateService = new TemplateService(templateConfigMapper, templateRuleMapper, engineConfigMapper, smartMatchRuleMapper);
     }
 
     // ==================== 模板 CRUD ====================
@@ -226,7 +230,7 @@ class TemplateServiceTest {
         TemplateRuleDTO dto = new TemplateRuleDTO();
         dto.setName("正文样式");
         dto.setFontName("宋体");
-        dto.setFontSize(12);
+        dto.setFontSize(new BigDecimal(12));
         dto.setFontBold(0);
         dto.setTextAlign("LEFT");
         dto.setTextIndent(new BigDecimal("2"));
@@ -302,13 +306,13 @@ class TemplateServiceTest {
         Long ruleId = 10L;
         TemplateRuleDTO dto = new TemplateRuleDTO();
         dto.setName("新样式名称");
-        dto.setFontSize(14);
+        dto.setFontSize(new BigDecimal(14));
         dto.setFontBold(1);
 
         TemplateRule existing = new TemplateRule();
         existing.setId(ruleId);
         existing.setName("旧样式");
-        existing.setFontSize(12);
+        existing.setFontSize(new BigDecimal(12));
 
         when(templateRuleMapper.selectById(ruleId)).thenReturn(existing);
         when(templateRuleMapper.updateById(any(TemplateRule.class))).thenReturn(1);
