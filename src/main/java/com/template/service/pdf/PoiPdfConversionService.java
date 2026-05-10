@@ -17,6 +17,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.List;
+import com.template.dto.PdfParagraphPosition;
 
 /**
  * 纯 Java 实现：使用 POI 读取 .docx + PDFBox 逐段绘制 PDF。
@@ -64,6 +65,12 @@ public class PoiPdfConversionService implements PdfConversionService {
 
     @Override
     public byte[] convertToPdf(byte[] docxContent, String originalFilename) throws PdfConversionException {
+        return convertToPdfWithPositions(docxContent, originalFilename, null);
+    }
+
+    @Override
+    public byte[] convertToPdfWithPositions(byte[] docxContent, String originalFilename,
+                                            List<PdfParagraphPosition> positions) throws PdfConversionException {
         try (ByteArrayInputStream bais = new ByteArrayInputStream(docxContent);
              XWPFDocument doc = new XWPFDocument(bais);
              PDDocument pdfDoc = new PDDocument()) {
@@ -79,7 +86,7 @@ public class PoiPdfConversionService implements PdfConversionService {
                 // 空文档也生成一页空白 PDF
                 pdfDoc.addPage(new PDPage(PDRectangle.A4));
             } else {
-                renderParagraphs(pdfDoc, paragraphs, cjkFont);
+                renderParagraphs(pdfDoc, paragraphs, cjkFont, positions);
             }
 
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -94,20 +101,50 @@ public class PoiPdfConversionService implements PdfConversionService {
 
     /**
      * 遍历所有段落，逐段绘制到 PDF 页面上，自动分页。
+     * 保留 3 参数签名以兼容原有调用。
      */
     private void renderParagraphs(PDDocument pdfDoc, List<XWPFParagraph> paragraphs, PDType0Font font) throws IOException {
+        renderParagraphs(pdfDoc, paragraphs, font, null);
+    }
+
+    /**
+     * 遍历所有段落，逐段绘制到 PDF 页面上，自动分页。
+     * 当 positions 不为 null 时，同时记录每个段落在 PDF 中的精确字符位置。
+     */
+    private void renderParagraphs(PDDocument pdfDoc, List<XWPFParagraph> paragraphs, PDType0Font font,
+                                  List<PdfParagraphPosition> positions) throws IOException {
         PDPage currentPage = new PDPage(PDRectangle.A4);
         pdfDoc.addPage(currentPage);
         PDPageContentStream[] csHolder = new PDPageContentStream[] {
             new PDPageContentStream(pdfDoc, currentPage, PDPageContentStream.AppendMode.APPEND, true)
         };
 
+        // PDF 累计字符计数器（基于实际写入 PDF 的字符数）
+        int totalRenderedChars = 0;
+
         try {
             // 当前绘制位置（Y 坐标从页面顶部开始递减）
             float cursorY = PAGE_HEIGHT - MARGIN_TOP;
 
-            for (XWPFParagraph paragraph : paragraphs) {
+            for (int paraIdx = 0; paraIdx < paragraphs.size(); paraIdx++) {
+                XWPFParagraph paragraph = paragraphs.get(paraIdx);
                 String text = sanitizeText(paragraph.getText());
+
+                // 记录段落起始位置（即使空段落也记录，方便索引对齐）
+                if (positions != null) {
+                    PdfParagraphPosition pos = new PdfParagraphPosition();
+                    pos.setParagraphIndex(paraIdx);
+                    pos.setPdfStartPos(totalRenderedChars);
+
+                    if (text == null || text.trim().isEmpty()) {
+                        // 空段落：起始=结束
+                        pos.setPdfEndPos(totalRenderedChars);
+                        positions.add(pos);
+                    } else {
+                        positions.add(pos);
+                    }
+                }
+
                 if (text == null || text.trim().isEmpty()) {
                     // 空段落，留一行空白
                     cursorY -= getLineHeight(DEFAULT_FONT_SIZE);
@@ -148,8 +185,17 @@ public class PoiPdfConversionService implements PdfConversionService {
                 float spaceBefore = extractSpaceBefore(paragraph, fontSize);
                 cursorY -= spaceBefore;
 
-                // 绘制文本（自动换行）
-                cursorY = renderText(csHolder, text, fontSize, lineHeight, indent, cursorY, pdfDoc, font);
+                // 绘制文本（自动换行），同时获取实际写入的字符数
+                int[] charCountOut = positions != null ? new int[1] : null;
+                cursorY = renderText(csHolder, text, fontSize, lineHeight, indent, cursorY, pdfDoc, font, charCountOut);
+
+                // 更新位置记录的结束字符位置
+                if (positions != null && charCountOut != null) {
+                    totalRenderedChars += charCountOut[0];
+                    // positions 中的最后一条就是当前段落的记录
+                    PdfParagraphPosition lastPos = positions.get(positions.size() - 1);
+                    lastPos.setPdfEndPos(totalRenderedChars);
+                }
 
                 // 换行后段间距
                 float spaceAfter = extractSpaceAfter(paragraph, fontSize);
@@ -163,10 +209,12 @@ public class PoiPdfConversionService implements PdfConversionService {
     /**
      * 在 PDF 上绘制文本，自动换行。
      * 返回绘制结束后的 cursorY 位置。
+     * 当 charCountOut 不为 null 时，将实际写入 PDF 的字符数存入 charCountOut[0]。
      */
     private float renderText(PDPageContentStream[] csHolder, String text, float fontSize,
                              float lineHeight, float indent, float startY,
-                             PDDocument pdfDoc, PDType0Font font) throws IOException {
+                             PDDocument pdfDoc, PDType0Font font,
+                             int[] charCountOut) throws IOException {
         PDPageContentStream cs = csHolder[0];
         PDFont activeFont = font != null ? font : FALLBACK_FONT;
         cs.beginText();
@@ -178,6 +226,7 @@ public class PoiPdfConversionService implements PdfConversionService {
 
         // 文本换行处理
         List<String> lines = wrapText(text, fontSize);
+        int charsWritten = 0;
 
         for (int i = 0; i < lines.size(); i++) {
             String line = lines.get(i);
@@ -207,12 +256,16 @@ public class PoiPdfConversionService implements PdfConversionService {
                 cs.newLineAtOffset(0, -lineHeight);
             }
             cs.showText(line);
+            charsWritten += line.length();
 
             cursorX = MARGIN_LEFT;
             cursorY -= lineHeight;
         }
 
         cs.endText();
+        if (charCountOut != null) {
+            charCountOut[0] = charsWritten;
+        }
         return cursorY;
     }
 

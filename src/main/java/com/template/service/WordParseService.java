@@ -6,8 +6,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.template.dto.EngineConfigDTO;
 import com.template.dto.LegendItemDTO;
 import com.template.dto.ParagraphItemDTO;
+import com.template.dto.PdfParagraphPosition;
 import com.template.dto.PreviewResultDTO;
 import com.template.entity.*;
+import com.template.service.WordParseService;
+import com.template.service.pdf.PdfConversionService;
 import com.template.util.ParagraphStyleExtractor;
 import com.template.mapper.*;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +44,7 @@ public class WordParseService {
     private final EngineConfigMapper engineConfigMapper;
     private final RecognitionEngine recognitionEngine;
     private final ObjectMapper objectMapper;
+    private final PdfConversionService pdfConversionService;
 
     public Page<UploadFile> list(int page, int size) {
         LambdaQueryWrapper<UploadFile> wrapper = new LambdaQueryWrapper<>();
@@ -226,6 +230,9 @@ public class WordParseService {
             item.setMatchedLevel(match.getMatchedLevel());
             item.setRuleId(match.getRuleId());
             item.setRuleName(match.getRuleName());
+            item.setStartOffset(match.getStartOffset());
+            item.setEndOffset(match.getEndOffset());
+            item.setMatchedEngineConfigId(match.getMatchedEngineConfigId());
 
             // 提取段落原始样式（索引越界保护）
             if (match.getIndex() < paragraphs.size()) {
@@ -248,6 +255,25 @@ public class WordParseService {
             doc.close();
         } catch (Exception e) {
             log.warn("关闭XWPFDocument异常", e);
+        }
+
+        // 生成 PDF 段落位置信息（用于前端精确高亮）
+        try {
+            List<PdfParagraphPosition> pdfPositions = new ArrayList<>();
+            pdfConversionService.convertToPdfWithPositions(uf.getOriginalContent(), uf.getOriginalName(), pdfPositions);
+            java.util.Map<Integer, PdfParagraphPosition> posMap = new java.util.HashMap<>();
+            for (PdfParagraphPosition pos : pdfPositions) {
+                posMap.put(pos.getParagraphIndex(), pos);
+            }
+            for (ParagraphItemDTO item : items) {
+                PdfParagraphPosition pos = posMap.get(item.getIndex());
+                if (pos != null) {
+                    item.setPdfStartPos(pos.getPdfStartPos());
+                    item.setPdfEndPos(pos.getPdfEndPos());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("PDF 位置生成失败，高亮将使用比例估算: fileId={}", fileId, e);
         }
 
         // 组装结果
@@ -376,11 +402,22 @@ public class WordParseService {
 
             backfillFromManualAdjust(matches, rules);
 
-            // 自动创建 SPECIAL 类型的引擎配置（仅 matchedType=UNKNOWN 且有 ruleId 的段落）
+            // 处理 SPECIAL/UNKNOWN 段落的引擎配置创建或更新
             for (RecognitionEngine.ParagraphMatch match : matches) {
-                if (match.getRuleId() != null && match.getText() != null && !match.getText().isEmpty()
-                        && match.getMatchedType() == RecognitionEngine.MatchedType.UNKNOWN) {
-                    autoCreateSpecialConfig(uf.getTemplateId(), match.getText(), match.getRuleId());
+                if (match.getRuleId() == null || match.getText() == null || match.getText().isEmpty()) {
+                    continue;
+                }
+                if (match.getMatchedType() == RecognitionEngine.MatchedType.SPECIAL) {
+                    // SPECIAL 段落：更新已有配置
+                    if (match.getMatchedEngineConfigId() != null) {
+                        updateSpecialConfig(match.getMatchedEngineConfigId(), match.getText(), match.getRuleId());
+                    } else {
+                        // 兼容旧数据：matchedEngineConfigId 为 null 时降级为按文本查找
+                        updateSpecialConfigByTemplateAndText(uf.getTemplateId(), match.getText(), match.getRuleId());
+                    }
+                } else if (match.getMatchedType() == RecognitionEngine.MatchedType.UNKNOWN) {
+                    // UNKNOWN 段落：创建或更新配置
+                    autoCreateOrUpdateSpecialConfig(uf.getTemplateId(), match.getText(), match.getRuleId());
                     match.setMatchedType(RecognitionEngine.MatchedType.SPECIAL);
                 }
             }
@@ -397,19 +434,23 @@ public class WordParseService {
     }
 
     /**
-     * 自动创建 SPECIAL 类型的 engine_config 记录。
-     * 如果同模板下同一段落文本+同一规则已有 SPECIAL 配置，则跳过。
+     * 自动创建或更新 SPECIAL 类型的 engine_config 记录。
+     * 如果同模板下同一段落文本已有 SPECIAL 配置（无论 ruleId），则更新其 ruleId；
+     * 否则创建新记录。
      */
-    private void autoCreateSpecialConfig(Long templateId, String text, Long ruleId) {
+    private void autoCreateOrUpdateSpecialConfig(Long templateId, String text, Long ruleId) {
         String pattern = "^" + Pattern.quote(text) + "$";
 
         LambdaQueryWrapper<EngineConfig> check = new LambdaQueryWrapper<>();
         check.eq(EngineConfig::getTemplateId, templateId)
              .eq(EngineConfig::getMatchType, "SPECIAL")
-             .eq(EngineConfig::getPattern, pattern)
-             .eq(EngineConfig::getRuleId, ruleId);
-        long count = engineConfigMapper.selectCount(check);
-        if (count > 0) {
+             .eq(EngineConfig::getPattern, pattern);
+        List<EngineConfig> existingList = engineConfigMapper.selectList(check);
+        if (!existingList.isEmpty()) {
+            // 更新已有配置的 ruleId
+            EngineConfig existing = existingList.get(0);
+            existing.setRuleId(ruleId);
+            engineConfigMapper.updateById(existing);
             return;
         }
 
@@ -442,6 +483,40 @@ public class WordParseService {
             cleanText = cleanText.substring(0, 10);
         }
         return "特殊样式" + cleanText;
+    }
+
+    /**
+     * 更新指定 SPECIAL 引擎配置的段落文本和规则。
+     */
+    private void updateSpecialConfig(Long configId, String text, Long ruleId) {
+        EngineConfig config = engineConfigMapper.selectById(configId);
+        if (config == null) {
+            log.warn("SPECIAL 配置不存在: configId={}", configId);
+            return;
+        }
+        String pattern = "^" + Pattern.quote(text) + "$";
+        config.setPattern(pattern);
+        config.setRuleId(ruleId);
+        config.setConfigName(generateConfigName(text));
+        engineConfigMapper.updateById(config);
+    }
+
+    /**
+     * 按模板+文本查找 SPECIAL 配置并更新其 ruleId（兼容旧数据降级使用）。
+     */
+    private void updateSpecialConfigByTemplateAndText(Long templateId, String text, Long ruleId) {
+        String pattern = "^" + Pattern.quote(text) + "$";
+        LambdaQueryWrapper<EngineConfig> query = new LambdaQueryWrapper<>();
+        query.eq(EngineConfig::getTemplateId, templateId)
+             .eq(EngineConfig::getMatchType, "SPECIAL")
+             .eq(EngineConfig::getPattern, pattern);
+        List<EngineConfig> list = engineConfigMapper.selectList(query);
+        if (!list.isEmpty()) {
+            EngineConfig config = list.get(0);
+            config.setRuleId(ruleId);
+            config.setConfigName(generateConfigName(text));
+            engineConfigMapper.updateById(config);
+        }
     }
 
     @Transactional
@@ -580,6 +655,9 @@ public class WordParseService {
         map.put("matched_level", match.getMatchedLevel());
         map.put("rule_id", match.getRuleId());
         map.put("rule_name", match.getRuleName());
+        map.put("start_offset", match.getStartOffset());
+        map.put("end_offset", match.getEndOffset());
+        map.put("matched_engine_config_id", match.getMatchedEngineConfigId());
         return map;
     }
 

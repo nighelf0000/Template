@@ -31,6 +31,7 @@ public class RecognitionEngine {
         // 按 match_type 分组并按 sort_order 排序
         Map<String, List<EngineConfig>> configGroups = groupAndSortConfigs(engineConfigs);
 
+        int cumulativeOffset = 0;
         for (int i = 0; i < paragraphs.size(); i++) {
             XWPFParagraph paragraph = paragraphs.get(i);
             String text = paragraph.getText().trim();
@@ -41,6 +42,9 @@ public class RecognitionEngine {
             ParagraphMatch match = new ParagraphMatch();
             match.setIndex(i);
             match.setText(text.length() > 200 ? text.substring(0, 200) : text);
+            match.setStartOffset(cumulativeOffset);
+            match.setEndOffset(cumulativeOffset + text.length());
+            cumulativeOffset += text.length();
 
             // 匹配优先级：SPECIAL > COVER > TOC > TITLE > BODY
             boolean matched = false;
@@ -56,6 +60,9 @@ public class RecognitionEngine {
                     if (matchPattern(text, cfg.getPattern())) {
                         match.setMatchedType(MatchedType.valueOf(type));
                         match.setRuleId(cfg.getRuleId());
+                        if ("SPECIAL".equals(type)) {
+                            match.setMatchedEngineConfigId(cfg.getId());
+                        }
                         if ("TITLE".equals(type) && cfg.getMatchLevel() != null) {
                             match.setMatchedLevel(cfg.getMatchLevel());
                         } else {
@@ -142,6 +149,9 @@ public class RecognitionEngine {
         private Integer matchedLevel;
         private Long ruleId;
         private String ruleName;
+        private int startOffset;
+        private int endOffset;
+        private Long matchedEngineConfigId;
 
         public int getIndex() { return index; }
         public void setIndex(int index) { this.index = index; }
@@ -155,5 +165,11 @@ public class RecognitionEngine {
         public void setRuleId(Long ruleId) { this.ruleId = ruleId; }
         public String getRuleName() { return ruleName; }
         public void setRuleName(String ruleName) { this.ruleName = ruleName; }
+        public int getStartOffset() { return startOffset; }
+        public void setStartOffset(int startOffset) { this.startOffset = startOffset; }
+        public int getEndOffset() { return endOffset; }
+        public void setEndOffset(int endOffset) { this.endOffset = endOffset; }
+        public Long getMatchedEngineConfigId() { return matchedEngineConfigId; }
+        public void setMatchedEngineConfigId(Long matchedEngineConfigId) { this.matchedEngineConfigId = matchedEngineConfigId; }
     }
 }

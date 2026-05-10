@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.template.entity.*;
 import com.template.mapper.*;
+import com.template.service.pdf.PdfConversionService;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
@@ -54,6 +55,9 @@ class WordParseServiceTest {
     @Mock
     private RecognitionEngine recognitionEngine;
 
+    @Mock
+    private PdfConversionService pdfConversionService;
+
     private ObjectMapper objectMapper;
 
     private WordParseService wordParseService;
@@ -63,7 +67,7 @@ class WordParseServiceTest {
         objectMapper = new ObjectMapper();
         wordParseService = new WordParseService(
                 uploadFileMapper, templateConfigMapper, templateRuleMapper,
-                engineConfigMapper, recognitionEngine, objectMapper);
+                engineConfigMapper, recognitionEngine, objectMapper, pdfConversionService);
     }
 
     // ========== 辅助方法 ==========

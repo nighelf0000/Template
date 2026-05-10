@@ -75,6 +75,13 @@ export interface ParagraphItem {
   ruleName?: string
   style: Record<string, any>
   backgroundColor?: string
+  startOffset: number
+  endOffset: number
+  /** 该段落在 PDF 中的起始字符位置（由后端 PDF 生成时精确记录） */
+  pdfStartPos?: number
+  /** 该段落在 PDF 中的结束字符位置（由后端 PDF 生成时精确记录） */
+  pdfEndPos?: number
+  matchedEngineConfigId?: number
 }
 
 export interface ParseResult {

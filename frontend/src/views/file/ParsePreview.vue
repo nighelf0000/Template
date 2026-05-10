@@ -418,6 +418,17 @@ function binarySearchItemIndex(arr: number[], target: number): number {
   return lo
 }
 
+/** 查找第一个 arr[i] > target 的索引，用于起始项搜索时跳过边界处前一段的文本项 */
+function binarySearchItemIndexGT(arr: number[], target: number): number {
+  let lo = 0, hi = arr.length - 1
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1
+    if (arr[mid] <= target) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+
 async function renderHighlights() {
   const canvas = highlightCanvasRef.value
   if (!canvas || !currentPageObj.value || !parseResult.value) return
@@ -435,8 +446,10 @@ async function renderHighlights() {
 
   const allParagraphs = parseResult.value.paragraphs
 
-  // 计算所有段落的累计文本长度
-  const docTotalLen = allParagraphs.reduce((sum, p) => sum + (p.text || '').trim().length, 0)
+  // 使用后端记录的全文字符偏移（未被截断），取最后一段的 endOffset 作为总长度
+  const docTotalLen = allParagraphs.length > 0
+    ? allParagraphs[allParagraphs.length - 1].endOffset || 0
+    : 0
   if (docTotalLen === 0) return
 
   // 计算每个扁平化文本项的累计字符结束位置
@@ -447,20 +460,25 @@ async function renderHighlights() {
     itemEndPos.push(acc)
   }
 
-  // 按段落顺序逐段匹配 PDF 文本项（基于累积文本长度比例，不依赖字符串匹配）
-  let paraCumLen = 0
+  // 按段落顺序逐段匹配 PDF 文本项
   for (const match of allParagraphs) {
-    const paraLen = (match.text || '').trim().length
-    if (!match.backgroundColor || paraLen < 3) {
-      paraCumLen += paraLen
+    if (!match.backgroundColor || !match.endOffset || match.endOffset <= match.startOffset) {
       continue
     }
 
-    // 将段落的字符范围比例映射到 PDF 文本项索引范围
-    const startCharPos = Math.floor((paraCumLen / docTotalLen) * allPagesTotalChars.value)
-    const endCharPos = Math.ceil(((paraCumLen + paraLen) / docTotalLen) * allPagesTotalChars.value)
+    // 优先使用后端精确记录的 PDF 字符位置（pdfStartPos/pdfEndPos），
+    // 向后兼容：若无则用原始偏移在 docx 原文中的比例，映射到 PDF 文本项的字符位置
+    const startCharPos = match.pdfStartPos != null
+      ? match.pdfStartPos
+      : Math.floor((match.startOffset / docTotalLen) * allPagesTotalChars.value)
+    const endCharPos = match.pdfEndPos != null
+      ? match.pdfEndPos
+      : Math.ceil((match.endOffset / docTotalLen) * allPagesTotalChars.value)
 
-    const startItemIdx = binarySearchItemIndex(itemEndPos, startCharPos)
+    // 起始项用严格大于：跳过边界处前一段的最后一个文本项，避免吞并前段区域
+    const startItemIdx = startCharPos === 0
+      ? 0
+      : binarySearchItemIndexGT(itemEndPos, startCharPos)
     const endItemIdx = Math.min(binarySearchItemIndex(itemEndPos, endCharPos), allItems.length - 1)
 
     // 收集在当前页面上的文本项
@@ -472,7 +490,6 @@ async function renderHighlights() {
     }
 
     if (pageItems.length === 0) {
-      paraCumLen += paraLen
       continue
     }
 
@@ -499,7 +516,6 @@ async function renderHighlights() {
       context.globalAlpha = 1.0
     }
 
-    paraCumLen += paraLen
   }
 }
 
@@ -526,7 +542,10 @@ async function handleSave() {
           matchedType: p.matchedType,
           matchedLevel: p.matchedLevel,
           ruleId: p.ruleId,
-          ruleName: p.ruleName
+          ruleName: p.ruleName,
+          matchedEngineConfigId: p.matchedEngineConfigId,
+          startOffset: p.startOffset,
+          endOffset: p.endOffset
         }))
       )
     }
