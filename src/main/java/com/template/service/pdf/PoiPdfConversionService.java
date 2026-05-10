@@ -9,6 +9,8 @@ import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+import org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState;
+import java.awt.Color;
 import java.io.File;
 import java.io.InputStream;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
@@ -16,7 +18,11 @@ import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import com.template.dto.ParagraphItemDTO;
+import com.template.dto.PdfParagraphPosition;
 
 /**
  * 纯 Java 实现：使用 POI 读取 .docx + PDFBox 逐段绘制 PDF。
@@ -64,6 +70,12 @@ public class PoiPdfConversionService implements PdfConversionService {
 
     @Override
     public byte[] convertToPdf(byte[] docxContent, String originalFilename) throws PdfConversionException {
+        return convertToPdfWithPositions(docxContent, originalFilename, null);
+    }
+
+    @Override
+    public byte[] convertToPdfWithPositions(byte[] docxContent, String originalFilename,
+                                            List<PdfParagraphPosition> positions) throws PdfConversionException {
         try (ByteArrayInputStream bais = new ByteArrayInputStream(docxContent);
              XWPFDocument doc = new XWPFDocument(bais);
              PDDocument pdfDoc = new PDDocument()) {
@@ -79,23 +91,65 @@ public class PoiPdfConversionService implements PdfConversionService {
                 // 空文档也生成一页空白 PDF
                 pdfDoc.addPage(new PDPage(PDRectangle.A4));
             } else {
-                renderParagraphs(pdfDoc, paragraphs, cjkFont);
+                renderParagraphs(pdfDoc, paragraphs, cjkFont, positions);
             }
 
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             pdfDoc.save(baos);
             return baos.toByteArray();
 
-        } catch (IOException e) {
+        } catch (IOException | IllegalArgumentException e) {
             log.error("POI+PDFBox PDF 转换失败: filename={}", originalFilename, e);
             throw new PdfConversionException("PDF 转换失败: " + e.getMessage(), e);
         }
     }
 
+    @Override
+    public byte[] convertToPdfWithBackground(byte[] docxContent, String originalFilename,
+                                              List<ParagraphItemDTO> paragraphs) throws PdfConversionException {
+        // 构建段落索引 -> 底色映射
+        Map<Integer, String> bgColorMap = new HashMap<>();
+        if (paragraphs != null) {
+            for (ParagraphItemDTO p : paragraphs) {
+                String bgColor = p.getBackgroundColor();
+                if (bgColor != null && !bgColor.isEmpty()) {
+                    bgColorMap.put(p.getIndex(), bgColor);
+                }
+            }
+        }
+
+        try (ByteArrayInputStream bais = new ByteArrayInputStream(docxContent);
+             XWPFDocument doc = new XWPFDocument(bais);
+             PDDocument pdfDoc = new PDDocument()) {
+
+            PDType0Font cjkFont = loadCjkFont(pdfDoc);
+            if (cjkFont == null) {
+                log.warn("未找到中文字体，中文文本可能无法正常显示");
+            }
+
+            List<XWPFParagraph> xwpfParagraphs = doc.getParagraphs();
+            if (xwpfParagraphs.isEmpty()) {
+                pdfDoc.addPage(new PDPage(PDRectangle.A4));
+            } else {
+                renderParagraphsWithBackground(pdfDoc, xwpfParagraphs, cjkFont, bgColorMap);
+            }
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            pdfDoc.save(baos);
+            return baos.toByteArray();
+
+        } catch (IOException | IllegalArgumentException e) {
+            log.error("POI+PDFBox 带底色 PDF 转换失败: filename={}", originalFilename, e);
+            throw new PdfConversionException("PDF 转换失败: " + e.getMessage(), e);
+        }
+    }
+
     /**
-     * 遍历所有段落，逐段绘制到 PDF 页面上，自动分页。
+     * 遍历所有段落，逐段绘制到 PDF 页面上（带底色支持），自动分页。
+     * bgColorMap 为段落索引到底色 CSS 颜色的映射，无底色的段落不绘制背景。
      */
-    private void renderParagraphs(PDDocument pdfDoc, List<XWPFParagraph> paragraphs, PDType0Font font) throws IOException {
+    private void renderParagraphsWithBackground(PDDocument pdfDoc, List<XWPFParagraph> paragraphs,
+                                                PDType0Font font, Map<Integer, String> bgColorMap) throws IOException {
         PDPage currentPage = new PDPage(PDRectangle.A4);
         pdfDoc.addPage(currentPage);
         PDPageContentStream[] csHolder = new PDPageContentStream[] {
@@ -103,11 +157,99 @@ public class PoiPdfConversionService implements PdfConversionService {
         };
 
         try {
+            float cursorY = PAGE_HEIGHT - MARGIN_TOP;
+
+            for (int paraIdx = 0; paraIdx < paragraphs.size(); paraIdx++) {
+                XWPFParagraph paragraph = paragraphs.get(paraIdx);
+                String text = sanitizeText(paragraph.getText());
+
+                if (text == null || text.trim().isEmpty()) {
+                    cursorY -= getLineHeight(DEFAULT_FONT_SIZE);
+                    if (needNewPage(cursorY)) {
+                        csHolder[0].close();
+                        currentPage = new PDPage(PDRectangle.A4);
+                        pdfDoc.addPage(currentPage);
+                        csHolder[0] = new PDPageContentStream(pdfDoc, currentPage,
+                                PDPageContentStream.AppendMode.APPEND, true);
+                        cursorY = PAGE_HEIGHT - MARGIN_TOP;
+                    }
+                    continue;
+                }
+
+                float indent = estimateIndent(paragraph);
+                float fontSize = extractFontSize(paragraph);
+                float lineHeight = getLineHeight(fontSize);
+                float paraHeight = calculateParagraphHeight(text, fontSize, lineHeight);
+
+                if (needNewPage(cursorY) || cursorY - paraHeight < MARGIN_BOTTOM) {
+                    csHolder[0].close();
+                    currentPage = new PDPage(PDRectangle.A4);
+                    pdfDoc.addPage(currentPage);
+                    csHolder[0] = new PDPageContentStream(pdfDoc, currentPage,
+                            PDPageContentStream.AppendMode.APPEND, true);
+                    cursorY = PAGE_HEIGHT - MARGIN_TOP;
+                }
+
+                float spaceBefore = extractSpaceBefore(paragraph, fontSize);
+                cursorY -= spaceBefore;
+
+                String bgColor = bgColorMap.get(paraIdx);
+                cursorY = renderText(csHolder, text, fontSize, lineHeight, indent, cursorY, pdfDoc, font, null, bgColor);
+
+                float spaceAfter = extractSpaceAfter(paragraph, fontSize);
+                cursorY -= spaceAfter;
+            }
+        } finally {
+            csHolder[0].close();
+        }
+    }
+
+    /**
+     * 遍历所有段落，逐段绘制到 PDF 页面上，自动分页。
+     * 保留 3 参数签名以兼容原有调用。
+     */
+    private void renderParagraphs(PDDocument pdfDoc, List<XWPFParagraph> paragraphs, PDType0Font font) throws IOException {
+        renderParagraphs(pdfDoc, paragraphs, font, null);
+    }
+
+    /**
+     * 遍历所有段落，逐段绘制到 PDF 页面上，自动分页。
+     * 当 positions 不为 null 时，同时记录每个段落在 PDF 中的精确字符位置。
+     */
+    private void renderParagraphs(PDDocument pdfDoc, List<XWPFParagraph> paragraphs, PDType0Font font,
+                                  List<PdfParagraphPosition> positions) throws IOException {
+        PDPage currentPage = new PDPage(PDRectangle.A4);
+        pdfDoc.addPage(currentPage);
+        PDPageContentStream[] csHolder = new PDPageContentStream[] {
+            new PDPageContentStream(pdfDoc, currentPage, PDPageContentStream.AppendMode.APPEND, true)
+        };
+
+        // PDF 累计字符计数器（基于实际写入 PDF 的字符数）
+        int totalRenderedChars = 0;
+
+        try {
             // 当前绘制位置（Y 坐标从页面顶部开始递减）
             float cursorY = PAGE_HEIGHT - MARGIN_TOP;
 
-            for (XWPFParagraph paragraph : paragraphs) {
+            for (int paraIdx = 0; paraIdx < paragraphs.size(); paraIdx++) {
+                XWPFParagraph paragraph = paragraphs.get(paraIdx);
                 String text = sanitizeText(paragraph.getText());
+
+                // 记录段落起始位置（即使空段落也记录，方便索引对齐）
+                if (positions != null) {
+                    PdfParagraphPosition pos = new PdfParagraphPosition();
+                    pos.setParagraphIndex(paraIdx);
+                    pos.setPdfStartPos(totalRenderedChars);
+
+                    if (text == null || text.trim().isEmpty()) {
+                        // 空段落：起始=结束
+                        pos.setPdfEndPos(totalRenderedChars);
+                        positions.add(pos);
+                    } else {
+                        positions.add(pos);
+                    }
+                }
+
                 if (text == null || text.trim().isEmpty()) {
                     // 空段落，留一行空白
                     cursorY -= getLineHeight(DEFAULT_FONT_SIZE);
@@ -148,8 +290,17 @@ public class PoiPdfConversionService implements PdfConversionService {
                 float spaceBefore = extractSpaceBefore(paragraph, fontSize);
                 cursorY -= spaceBefore;
 
-                // 绘制文本（自动换行）
-                cursorY = renderText(csHolder, text, fontSize, lineHeight, indent, cursorY, pdfDoc, font);
+                // 绘制文本（自动换行），同时获取实际写入的字符数
+                int[] charCountOut = positions != null ? new int[1] : null;
+                cursorY = renderText(csHolder, text, fontSize, lineHeight, indent, cursorY, pdfDoc, font, charCountOut);
+
+                // 更新位置记录的结束字符位置
+                if (positions != null && charCountOut != null) {
+                    totalRenderedChars += charCountOut[0];
+                    // positions 中的最后一条就是当前段落的记录
+                    PdfParagraphPosition lastPos = positions.get(positions.size() - 1);
+                    lastPos.setPdfEndPos(totalRenderedChars);
+                }
 
                 // 换行后段间距
                 float spaceAfter = extractSpaceAfter(paragraph, fontSize);
@@ -163,10 +314,12 @@ public class PoiPdfConversionService implements PdfConversionService {
     /**
      * 在 PDF 上绘制文本，自动换行。
      * 返回绘制结束后的 cursorY 位置。
+     * 当 charCountOut 不为 null 时，将实际写入 PDF 的字符数存入 charCountOut[0]。
      */
     private float renderText(PDPageContentStream[] csHolder, String text, float fontSize,
                              float lineHeight, float indent, float startY,
-                             PDDocument pdfDoc, PDType0Font font) throws IOException {
+                             PDDocument pdfDoc, PDType0Font font,
+                             int[] charCountOut) throws IOException {
         PDPageContentStream cs = csHolder[0];
         PDFont activeFont = font != null ? font : FALLBACK_FONT;
         cs.beginText();
@@ -178,6 +331,7 @@ public class PoiPdfConversionService implements PdfConversionService {
 
         // 文本换行处理
         List<String> lines = wrapText(text, fontSize);
+        int charsWritten = 0;
 
         for (int i = 0; i < lines.size(); i++) {
             String line = lines.get(i);
@@ -207,12 +361,107 @@ public class PoiPdfConversionService implements PdfConversionService {
                 cs.newLineAtOffset(0, -lineHeight);
             }
             cs.showText(line);
+            charsWritten += line.length();
 
             cursorX = MARGIN_LEFT;
             cursorY -= lineHeight;
         }
 
         cs.endText();
+        if (charCountOut != null) {
+            charCountOut[0] = charsWritten;
+        }
+        return cursorY;
+    }
+
+    /**
+     * 在 PDF 上绘制文本（带整行底色支持），自动换行。
+     * backgroundColor 为 CSS 颜色值（如 #ff0000 或 hsl(h, s%, l%)），
+     * 非 null 时在每行文字前绘制整行底色矩形（35% 透明度）。
+     */
+    private float renderText(PDPageContentStream[] csHolder, String text, float fontSize,
+                             float lineHeight, float indent, float startY,
+                             PDDocument pdfDoc, PDType0Font font,
+                             int[] charCountOut, String backgroundColor) throws IOException {
+        PDPageContentStream cs = csHolder[0];
+        PDFont activeFont = font != null ? font : FALLBACK_FONT;
+        cs.beginText();
+        cs.setFont(activeFont, fontSize);
+
+        float cursorY = startY;
+        float cursorX = MARGIN_LEFT + indent;
+        boolean firstOnPage = true;
+
+        List<String> lines = wrapText(text, fontSize);
+        int charsWritten = 0;
+        Color bgColor = (backgroundColor != null && !backgroundColor.isEmpty()) ? parseColor(backgroundColor) : null;
+
+        // textMode 追踪当前是否在 BT/ET 对中
+        boolean textMode = true;
+
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i);
+
+            // 检查是否需要换页
+            if (cursorY - lineHeight < MARGIN_BOTTOM) {
+                cs.endText();
+                textMode = false;
+                cs.close();
+
+                PDPage newPage = new PDPage(PDRectangle.A4);
+                pdfDoc.addPage(newPage);
+                cs = new PDPageContentStream(pdfDoc, newPage,
+                        PDPageContentStream.AppendMode.APPEND, true);
+                csHolder[0] = cs;
+                cs.beginText();
+                cs.setFont(activeFont, fontSize);
+                textMode = true;
+                cursorY = PAGE_HEIGHT - MARGIN_TOP;
+                cursorX = MARGIN_LEFT;
+                firstOnPage = true;
+            }
+
+            // 绘制底色矩形（必须在 text mode 之外）
+            if (bgColor != null) {
+                if (textMode) {
+                    cs.endText();
+                    textMode = false;
+                }
+                cs.saveGraphicsState();
+                setTransparency(cs, 0.35f);
+                cs.setNonStrokingColor(bgColor);
+                cs.addRect(MARGIN_LEFT, cursorY - lineHeight, CONTENT_WIDTH, lineHeight);
+                cs.fill();
+                cs.restoreGraphicsState();
+            }
+
+            // 进入 text mode 并定位
+            if (!textMode) {
+                cs.beginText();
+                cs.setFont(activeFont, fontSize);
+                cs.newLineAtOffset(cursorX, cursorY - lineHeight);
+                textMode = true;
+                firstOnPage = false;
+            } else if (firstOnPage) {
+                cs.newLineAtOffset(cursorX, cursorY - lineHeight);
+                firstOnPage = false;
+            } else {
+                cs.newLineAtOffset(0, -lineHeight);
+            }
+
+            cs.showText(line);
+            charsWritten += line.length();
+
+            cursorX = MARGIN_LEFT;
+            cursorY -= lineHeight;
+        }
+
+        if (textMode) {
+            cs.endText();
+        }
+        if (charCountOut != null) {
+            charCountOut[0] = charsWritten;
+        }
         return cursorY;
     }
 
@@ -466,5 +715,69 @@ public class PoiPdfConversionService implements PdfConversionService {
             log.warn("字体文件加载失败: {}", fontFile.getAbsolutePath(), e);
             return null;
         }
+    }
+
+    // ==================== 底色绘制支持 ====================
+
+    /**
+     * 设置 PDFBox 内容流的透明度（填充和描边）。
+     */
+    private void setTransparency(PDPageContentStream cs, float alpha) throws IOException {
+        PDExtendedGraphicsState gs = new PDExtendedGraphicsState();
+        gs.setNonStrokingAlphaConstant(alpha);
+        gs.setStrokingAlphaConstant(alpha);
+        cs.setGraphicsStateParameters(gs);
+    }
+
+    /**
+     * 将 CSS 颜色值（如 #ff0000 / ff0000 / hsl(h, 60%, 85%)）转换为 AWT Color。
+     * 解析失败时返回 null。
+     */
+    private Color parseColor(String colorStr) {
+        if (colorStr == null || colorStr.isEmpty()) return null;
+        colorStr = colorStr.trim();
+        try {
+            if (colorStr.startsWith("#")) {
+                return Color.decode(colorStr);
+            } else if (colorStr.startsWith("hsl")) {
+                return parseHsl(colorStr);
+            } else if (colorStr.matches("[0-9a-fA-F]{6}")) {
+                // 兼容无 # 前缀的十六进制颜色
+                return Color.decode("#" + colorStr);
+            }
+        } catch (Exception e) {
+            log.warn("颜色解析失败: {}", colorStr, e);
+        }
+        return null;
+    }
+
+    /**
+     * 解析 hsl(h, s%, l%) 格式的颜色字符串。
+     */
+    private Color parseHsl(String hslStr) {
+        // 移除 "hsl(" 前缀和 ")" 后缀及空格
+        String inner = hslStr.substring(4, hslStr.length() - 1).replace(" ", "");
+        String[] parts = inner.split(",");
+        float h = Float.parseFloat(parts[0]);
+        float s = Float.parseFloat(parts[1].replace("%", "")) / 100f;
+        float l = Float.parseFloat(parts[2].replace("%", "")) / 100f;
+        return hslToRgb(h, s, l);
+    }
+
+    /**
+     * HSL 转 RGB，返回 AWT Color。
+     */
+    private Color hslToRgb(float h, float s, float l) {
+        float c = (1 - Math.abs(2 * l - 1)) * s;
+        float x = c * (1 - Math.abs((h / 60f) % 2 - 1));
+        float m = l - c / 2;
+        float r, g, b;
+        if (h < 60) { r = c; g = x; b = 0; }
+        else if (h < 120) { r = x; g = c; b = 0; }
+        else if (h < 180) { r = 0; g = c; b = x; }
+        else if (h < 240) { r = 0; g = x; b = c; }
+        else if (h < 300) { r = x; g = 0; b = c; }
+        else { r = c; g = 0; b = x; }
+        return new Color(r + m, g + m, b + m);
     }
 }

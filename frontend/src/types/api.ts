@@ -75,6 +75,9 @@ export interface ParagraphItem {
   ruleName?: string
   style: Record<string, any>
   backgroundColor?: string
+  startOffset: number
+  endOffset: number
+  matchedEngineConfigId?: number
 }
 
 export interface ParseResult {

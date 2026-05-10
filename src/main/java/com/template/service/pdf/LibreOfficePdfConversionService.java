@@ -1,10 +1,13 @@
 package com.template.service.pdf;
 
+import com.template.dto.PdfParagraphPosition;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
 
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -12,7 +15,11 @@ import java.util.concurrent.TimeUnit;
  * 调用 soffice --headless --convert-to pdf 命令。
  * 需要系统安装 LibreOffice 并配置 path。
  * 由 PdfConverterConfig 按需实例化，不通过组件扫描注册。
+ *
+ * @deprecated 已弃用，统一使用 POI+PDFBox 实现（PoiPdfConversionService）。
+ *             保留代码仅为向后兼容参考，不再注册为 Spring Bean。
  */
+@Deprecated
 @Slf4j
 public class LibreOfficePdfConversionService implements PdfConversionService {
 
@@ -89,6 +96,9 @@ public class LibreOfficePdfConversionService implements PdfConversionService {
 
             // 读取生成的 PDF
             byte[] pdfBytes = Files.readAllBytes(tempPdf);
+            if (pdfBytes.length == 0) {
+                throw new PdfConversionException("LibreOffice 生成的 PDF 文件为空");
+            }
             log.info("LibreOffice PDF 转换成功: size={} bytes", pdfBytes.length);
             return pdfBytes;
 
@@ -103,6 +113,24 @@ public class LibreOfficePdfConversionService implements PdfConversionService {
             cleanupTempFile(tempDocx);
             cleanupTempDir(tempOutputDir);
         }
+    }
+
+    @Override
+    public byte[] convertToPdfWithPositions(byte[] docxContent, String originalFilename,
+                                            List<PdfParagraphPosition> positions) throws PdfConversionException {
+        // Step 1: 使用 LibreOffice 生成完整 PDF（含图片/公式/表格）
+        byte[] pdfBytes = convertToPdf(docxContent, originalFilename);
+        // Step 2: 从 docx 获取段落列表，使用 PDFBox 从 PDF 中提取段落位置
+        try (XWPFDocument doc = new XWPFDocument(new ByteArrayInputStream(docxContent))) {
+            PdfTextPositionExtractor extractor = new PdfTextPositionExtractor();
+            List<PdfParagraphPosition> extracted = extractor.extractParagraphPositions(pdfBytes, doc.getParagraphs());
+            positions.addAll(extracted);
+            log.info("PDF 段落位置提取完成: 共 {} 个段落", extracted.size());
+        } catch (IOException e) {
+            log.error("提取 PDF 段落位置失败: filename={}", originalFilename, e);
+            throw new PdfConversionException("提取 PDF 段落位置失败: " + e.getMessage(), e);
+        }
+        return pdfBytes;
     }
 
     private String readStream(InputStream is) throws IOException {

@@ -6,8 +6,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.template.dto.EngineConfigDTO;
 import com.template.dto.LegendItemDTO;
 import com.template.dto.ParagraphItemDTO;
+import com.template.dto.PdfParagraphPosition;
 import com.template.dto.PreviewResultDTO;
 import com.template.entity.*;
+import com.template.service.WordParseService;
+import com.template.service.pdf.PdfConversionService;
 import com.template.util.ParagraphStyleExtractor;
 import com.template.mapper.*;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +44,7 @@ public class WordParseService {
     private final EngineConfigMapper engineConfigMapper;
     private final RecognitionEngine recognitionEngine;
     private final ObjectMapper objectMapper;
+    private final PdfConversionService pdfConversionService;
 
     public Page<UploadFile> list(int page, int size) {
         LambdaQueryWrapper<UploadFile> wrapper = new LambdaQueryWrapper<>();
@@ -226,6 +230,9 @@ public class WordParseService {
             item.setMatchedLevel(match.getMatchedLevel());
             item.setRuleId(match.getRuleId());
             item.setRuleName(match.getRuleName());
+            item.setStartOffset(match.getStartOffset());
+            item.setEndOffset(match.getEndOffset());
+            item.setMatchedEngineConfigId(match.getMatchedEngineConfigId());
 
             // 提取段落原始样式（索引越界保护）
             if (match.getIndex() < paragraphs.size()) {
@@ -238,7 +245,11 @@ public class WordParseService {
 
             // 确定底色
             TemplateRule rule = match.getRuleId() != null ? ruleMap.get(match.getRuleId()) : null;
-            item.setBackgroundColor(determineBackgroundColor(match.getRuleId(), rule));
+            if (match.getMatchedType() == RecognitionEngine.MatchedType.UNKNOWN) {
+                item.setBackgroundColor(null);
+            } else {
+                item.setBackgroundColor(determineBackgroundColor(match.getRuleId(), rule));
+            }
 
             items.add(item);
         }
@@ -250,8 +261,35 @@ public class WordParseService {
             log.warn("关闭XWPFDocument异常", e);
         }
 
+        // 生成 PDF 段落位置信息（用于前端精确高亮）
+        int totalPdfChars = 0;
+        try {
+            List<PdfParagraphPosition> pdfPositions = new ArrayList<>();
+            pdfConversionService.convertToPdfWithPositions(uf.getOriginalContent(), uf.getOriginalName(), pdfPositions);
+            java.util.Map<Integer, PdfParagraphPosition> posMap = new java.util.HashMap<>();
+            for (PdfParagraphPosition pos : pdfPositions) {
+                posMap.put(pos.getParagraphIndex(), pos);
+            }
+            for (ParagraphItemDTO item : items) {
+                PdfParagraphPosition pos = posMap.get(item.getIndex());
+                if (pos != null) {
+                    item.setPdfStartPos(pos.getPdfStartPos());
+                    item.setPdfEndPos(pos.getPdfEndPos());
+                }
+            }
+
+            for (PdfParagraphPosition pos : pdfPositions) {
+                if (pos.getPdfEndPos() > totalPdfChars) {
+                    totalPdfChars = pos.getPdfEndPos();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("PDF 位置生成失败，高亮将使用比例估算: fileId={}", fileId, e);
+        }
+
         // 组装结果
         PreviewResultDTO result = new PreviewResultDTO();
+        result.setTotalPdfChars(totalPdfChars);
         result.setTemplateId(uf.getTemplateId());
         result.setTemplateName(templateName);
         result.setPdfUrl("/api/word/" + fileId + "/preview/pdf");
@@ -342,17 +380,154 @@ public class WordParseService {
     }
 
     /**
-     * 确定规则底色：优先使用 highlightColor，否则按 ruleId HSL 自动生成。
+     * 确定规则底色：优先使用 highlightColor（含格式规范化），
+     * 降级：rule 为 null 但 ruleId 有值时从数据库查询；
+     * 最终按 ruleId HSL 自动生成。
      */
     private String determineBackgroundColor(Long ruleId, TemplateRule rule) {
         if (rule != null && rule.getHighlightColor() != null && !rule.getHighlightColor().isEmpty()) {
-            return rule.getHighlightColor();
+            String color = rule.getHighlightColor().trim();
+            if (!color.startsWith("#")) {
+                if (color.matches("[0-9a-fA-F]{6}")) {
+                    color = "#" + color;
+                } else if (color.matches("[0-9a-fA-F]{8}")) {
+                    color = "#" + color;
+                }
+            }
+            if (color.startsWith("#")) {
+                color = hexToHsl(color);
+            }
+            log.debug("determineBackgroundColor: ruleId={} 使用 highlightColor={}", ruleId, color);
+            return color;
+        }
+        if (rule == null && ruleId != null) {
+            TemplateRule dbRule = templateRuleMapper.selectById(ruleId);
+            if (dbRule != null && dbRule.getHighlightColor() != null && !dbRule.getHighlightColor().isEmpty()) {
+                String color = dbRule.getHighlightColor().trim();
+                if (!color.startsWith("#")) {
+                    if (color.matches("[0-9a-fA-F]{6}")) {
+                        color = "#" + color;
+                    } else if (color.matches("[0-9a-fA-F]{8}")) {
+                        color = "#" + color;
+                    }
+                }
+                if (color.startsWith("#")) {
+                    color = hexToHsl(color);
+                }
+                log.debug("determineBackgroundColor: ruleId={} 从DB降级查到 highlightColor={}", ruleId, color);
+                return color;
+            }
         }
         if (ruleId != null) {
             int hue = (int) ((ruleId * 137.508) % 360);
-            return String.format("hsl(%d, 60%%, 85%%)", hue);
+            String autoColor = String.format("hsl(%d, 60%%, 85%%)", hue);
+            log.debug("determineBackgroundColor: ruleId={} 无highlightColor，自动生成 HSL={}", ruleId, autoColor);
+            return autoColor;
         }
+        log.debug("determineBackgroundColor: ruleId 为 null，返回 null");
         return null;
+    }
+
+    /**
+     * 将十六进制颜色(#RRGGBB 或 #RRGGBBAA)转换为 HSL 格式。
+     */
+    private String hexToHsl(String hex) {
+        if (hex.startsWith("#")) {
+            hex = hex.substring(1);
+        }
+        if (hex.length() >= 6) {
+            hex = hex.substring(0, 6);
+        } else {
+            return hex;
+        }
+        try {
+            int r = Integer.parseInt(hex.substring(0, 2), 16);
+            int g = Integer.parseInt(hex.substring(2, 4), 16);
+            int b = Integer.parseInt(hex.substring(4, 6), 16);
+
+            float rf = r / 255f;
+            float gf = g / 255f;
+            float bf = b / 255f;
+
+            float max = Math.max(rf, Math.max(gf, bf));
+            float min = Math.min(rf, Math.min(gf, bf));
+            float delta = max - min;
+
+            float h = 0;
+            float l = (max + min) / 2;
+            float s = 0;
+
+            if (delta != 0) {
+                s = l > 0.5f ? delta / (2 - max - min) : delta / (max + min);
+                if (max == rf) {
+                    h = ((gf - bf) / delta) % 6;
+                } else if (max == gf) {
+                    h = (bf - rf) / delta + 2;
+                } else {
+                    h = (rf - gf) / delta + 4;
+                }
+                h *= 60;
+                if (h < 0) h += 360;
+            }
+
+            return String.format("hsl(%d, %d%%, %d%%)",
+                    Math.round(h), Math.round(s * 100), Math.round(l * 100));
+        } catch (NumberFormatException e) {
+            log.warn("hexToHsl 转换失败: hex={}", hex, e);
+            return "#" + hex;
+        }
+    }
+
+    /**
+     * 轻量方法：仅返回段落底色列表，用于 PDF 预览，
+     * 避免 preview() 中 PDF 位置计算、样式提取等额外开销。
+     */
+    public List<ParagraphItemDTO> getParagraphBackgrounds(Long fileId) {
+        UploadFile uf = uploadFileMapper.selectById(fileId);
+        if (uf == null) {
+            throw new RuntimeException("文件不存在");
+        }
+        if (uf.getTemplateId() == null) {
+            throw new RuntimeException("未指定模板");
+        }
+        if (uf.getParsedJson() == null) {
+            throw new RuntimeException("文件尚未解析，请先执行解析操作");
+        }
+
+        // 查询规则列表
+        List<TemplateRule> rules = templateRuleMapper.selectList(
+                new LambdaQueryWrapper<TemplateRule>().eq(TemplateRule::getTemplateId, uf.getTemplateId()));
+        Map<Long, TemplateRule> ruleMap = rules.stream()
+                .collect(Collectors.toMap(TemplateRule::getId, r -> r));
+
+        // 反序列化匹配数据
+        List<RecognitionEngine.ParagraphMatch> matches;
+        try {
+            matches = objectMapper.readValue(
+                    uf.getParsedJson(),
+                    objectMapper.getTypeFactory().constructCollectionType(List.class, RecognitionEngine.ParagraphMatch.class));
+        } catch (Exception e) {
+            log.error("parsedJson 反序列化失败: fileId={}", fileId, e);
+            throw new RuntimeException("解析数据反序列化失败", e);
+        }
+
+        // 仅构建段落底色信息（index + backgroundColor）
+        List<ParagraphItemDTO> items = new ArrayList<>();
+        for (RecognitionEngine.ParagraphMatch match : matches) {
+            ParagraphItemDTO item = new ParagraphItemDTO();
+            item.setIndex(match.getIndex());
+
+            TemplateRule rule = match.getRuleId() != null ? ruleMap.get(match.getRuleId()) : null;
+            if (match.getMatchedType() == RecognitionEngine.MatchedType.UNKNOWN) {
+                item.setBackgroundColor(null);
+            } else {
+                item.setBackgroundColor(determineBackgroundColor(match.getRuleId(), rule));
+            }
+
+            items.add(item);
+        }
+
+        return items;
     }
 
     @Transactional
@@ -376,11 +551,22 @@ public class WordParseService {
 
             backfillFromManualAdjust(matches, rules);
 
-            // 自动创建 SPECIAL 类型的引擎配置（仅 matchedType=UNKNOWN 且有 ruleId 的段落）
+            // 处理 SPECIAL/UNKNOWN 段落的引擎配置创建或更新
             for (RecognitionEngine.ParagraphMatch match : matches) {
-                if (match.getRuleId() != null && match.getText() != null && !match.getText().isEmpty()
-                        && match.getMatchedType() == RecognitionEngine.MatchedType.UNKNOWN) {
-                    autoCreateSpecialConfig(uf.getTemplateId(), match.getText(), match.getRuleId());
+                if (match.getRuleId() == null || match.getText() == null || match.getText().isEmpty()) {
+                    continue;
+                }
+                if (match.getMatchedType() == RecognitionEngine.MatchedType.SPECIAL) {
+                    // SPECIAL 段落：更新已有配置
+                    if (match.getMatchedEngineConfigId() != null) {
+                        updateSpecialConfig(match.getMatchedEngineConfigId(), match.getText(), match.getRuleId());
+                    } else {
+                        // 兼容旧数据：matchedEngineConfigId 为 null 时降级为按文本查找
+                        updateSpecialConfigByTemplateAndText(uf.getTemplateId(), match.getText(), match.getRuleId());
+                    }
+                } else if (match.getMatchedType() == RecognitionEngine.MatchedType.UNKNOWN) {
+                    // UNKNOWN 段落：创建或更新配置
+                    autoCreateOrUpdateSpecialConfig(uf.getTemplateId(), match.getText(), match.getRuleId());
                     match.setMatchedType(RecognitionEngine.MatchedType.SPECIAL);
                 }
             }
@@ -397,19 +583,23 @@ public class WordParseService {
     }
 
     /**
-     * 自动创建 SPECIAL 类型的 engine_config 记录。
-     * 如果同模板下同一段落文本+同一规则已有 SPECIAL 配置，则跳过。
+     * 自动创建或更新 SPECIAL 类型的 engine_config 记录。
+     * 如果同模板下同一段落文本已有 SPECIAL 配置（无论 ruleId），则更新其 ruleId；
+     * 否则创建新记录。
      */
-    private void autoCreateSpecialConfig(Long templateId, String text, Long ruleId) {
+    private void autoCreateOrUpdateSpecialConfig(Long templateId, String text, Long ruleId) {
         String pattern = "^" + Pattern.quote(text) + "$";
 
         LambdaQueryWrapper<EngineConfig> check = new LambdaQueryWrapper<>();
         check.eq(EngineConfig::getTemplateId, templateId)
              .eq(EngineConfig::getMatchType, "SPECIAL")
-             .eq(EngineConfig::getPattern, pattern)
-             .eq(EngineConfig::getRuleId, ruleId);
-        long count = engineConfigMapper.selectCount(check);
-        if (count > 0) {
+             .eq(EngineConfig::getPattern, pattern);
+        List<EngineConfig> existingList = engineConfigMapper.selectList(check);
+        if (!existingList.isEmpty()) {
+            // 更新已有配置的 ruleId
+            EngineConfig existing = existingList.get(0);
+            existing.setRuleId(ruleId);
+            engineConfigMapper.updateById(existing);
             return;
         }
 
@@ -442,6 +632,40 @@ public class WordParseService {
             cleanText = cleanText.substring(0, 10);
         }
         return "特殊样式" + cleanText;
+    }
+
+    /**
+     * 更新指定 SPECIAL 引擎配置的段落文本和规则。
+     */
+    private void updateSpecialConfig(Long configId, String text, Long ruleId) {
+        EngineConfig config = engineConfigMapper.selectById(configId);
+        if (config == null) {
+            log.warn("SPECIAL 配置不存在: configId={}", configId);
+            return;
+        }
+        String pattern = "^" + Pattern.quote(text) + "$";
+        config.setPattern(pattern);
+        config.setRuleId(ruleId);
+        config.setConfigName(generateConfigName(text));
+        engineConfigMapper.updateById(config);
+    }
+
+    /**
+     * 按模板+文本查找 SPECIAL 配置并更新其 ruleId（兼容旧数据降级使用）。
+     */
+    private void updateSpecialConfigByTemplateAndText(Long templateId, String text, Long ruleId) {
+        String pattern = "^" + Pattern.quote(text) + "$";
+        LambdaQueryWrapper<EngineConfig> query = new LambdaQueryWrapper<>();
+        query.eq(EngineConfig::getTemplateId, templateId)
+             .eq(EngineConfig::getMatchType, "SPECIAL")
+             .eq(EngineConfig::getPattern, pattern);
+        List<EngineConfig> list = engineConfigMapper.selectList(query);
+        if (!list.isEmpty()) {
+            EngineConfig config = list.get(0);
+            config.setRuleId(ruleId);
+            config.setConfigName(generateConfigName(text));
+            engineConfigMapper.updateById(config);
+        }
     }
 
     @Transactional
@@ -580,6 +804,9 @@ public class WordParseService {
         map.put("matched_level", match.getMatchedLevel());
         map.put("rule_id", match.getRuleId());
         map.put("rule_name", match.getRuleName());
+        map.put("start_offset", match.getStartOffset());
+        map.put("end_offset", match.getEndOffset());
+        map.put("matched_engine_config_id", match.getMatchedEngineConfigId());
         return map;
     }
 
