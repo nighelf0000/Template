@@ -1,0 +1,245 @@
+# 默认通用文档结构识别规则集
+name: default
+version: "1.0"
+description: 通用文档结构识别规则集，适用于大多数 Word 文档
+
+rules:
+  # ===== 标题规则（高优先级） =====
+  - id: heading_1
+    priority: 100
+    element_type: heading
+    level: 1
+    description: "样式名称为 Heading 1 或大纲级别为 1"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: eq
+        value: "heading 1"
+      - field: outline_level
+        operator: eq
+        value: 1
+    confidence: 0.95
+
+  - id: heading_1_zh
+    priority: 99
+    element_type: heading
+    level: 1
+    description: "中文版 Word 标题 1"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: eq
+        value: "标题 1"
+      - field: style_name_raw
+        operator: eq
+        value: "标题 1"
+    confidence: 0.9
+
+  - id: heading_2
+    priority: 98
+    element_type: heading
+    level: 2
+    description: "样式名称为 Heading 2 或大纲级别为 2"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: eq
+        value: "heading 2"
+      - field: outline_level
+        operator: eq
+        value: 2
+    confidence: 0.95
+
+  - id: heading_2_zh
+    priority: 97
+    element_type: heading
+    level: 2
+    description: "中文版 Word 标题 2"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: eq
+        value: "标题 2"
+    confidence: 0.9
+
+  - id: heading_3
+    priority: 96
+    element_type: heading
+    level: 3
+    description: "样式名称为 Heading 3"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: eq
+        value: "heading 3"
+      - field: outline_level
+        operator: eq
+        value: 3
+    confidence: 0.95
+
+  - id: heading_3_zh
+    priority: 95
+    element_type: heading
+    level: 3
+    description: "中文版 Word 标题 3"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: eq
+        value: "标题 3"
+    confidence: 0.9
+
+  - id: heading_4
+    priority: 94
+    element_type: heading
+    level: 4
+    description: "样式名称为 Heading 4"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: eq
+        value: "heading 4"
+      - field: style_name
+        operator: eq
+        value: "标题 4"
+    confidence: 0.9
+
+  # ===== 目录规则 =====
+  - id: toc_heading
+    priority: 90
+    element_type: toc
+    description: "目录标题"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^toc\\s+heading|table\\s+of\\s+contents|目录"
+    confidence: 0.85
+
+  - id: toc_item
+    priority: 89
+    element_type: toc_item
+    description: "目录项"
+    match_strategy: all
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^toc\\d*$"
+    confidence: 0.85
+
+  # ===== 代码块规则 =====
+  - id: code_block
+    priority: 60
+    element_type: code_block
+    description: "等宽字体的段落"
+    match_strategy: any
+    conditions:
+      - field: font_name
+        operator: in
+        value: ["Courier New", "Consolas", "Source Code Pro", "JetBrains Mono", "Fira Code", "Monaco", "Menlo"]
+      - field: font_name_east_asia
+        operator: in
+        value: ["SimSun", "FangSong", "NSimSun"]
+    confidence: 0.7
+
+  # ===== 引用规则 =====
+  - id: block_quote
+    priority: 55
+    element_type: block_quote
+    description: "引用样式"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^(block\\s*quote|quote|intense\\s*quote|引用|引文)"
+      - field: indent_left
+        operator: gt
+        value: 30.0
+    confidence: 0.7
+
+  # ===== 标题说明（图/表标题） =====
+  - id: caption
+    priority: 50
+    element_type: caption
+    description: "图片或表格的标题说明"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^(caption|figure\\s*caption|table\\s*caption|题注|图\\s*\\d|表\\s*\\d)"
+      - field: style_name
+        operator: contains
+        value: "caption"
+      - field: style_name
+        operator: contains
+        value: "题注"
+    confidence: 0.8
+
+  # ===== 列表规则 =====
+  - id: list_ordered
+    priority: 40
+    element_type: list_ordered
+    description: "有序列表（有编号且为数字格式）"
+    match_strategy: all
+    conditions:
+      - field: has_numbering
+        operator: eq
+        value: true
+      - field: numbering_format
+        operator: in
+        value: ["decimal", "lowerLetter", "upperLetter", "lowerRoman", "upperRoman"]
+    confidence: 0.8
+
+  - id: list_unordered
+    priority: 39
+    element_type: list_unordered
+    description: "无序列表（有编号且为项目符号格式）"
+    match_strategy: all
+    conditions:
+      - field: has_numbering
+        operator: eq
+        value: true
+      - field: numbering_format
+        operator: in
+        value: ["bullet", "hybridBullet"]
+    confidence: 0.8
+
+  - id: list_generic
+    priority: 38
+    element_type: list_unordered
+    description: "通用列表（有编号但格式未知）"
+    match_strategy: all
+    conditions:
+      - field: has_numbering
+        operator: eq
+        value: true
+    confidence: 0.6
+
+  # ===== 正文规则 =====
+  - id: body_paragraph
+    priority: 10
+    element_type: paragraph
+    description: "正文段落（Normal 样式）"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^normal|正文|body\\s*text|default\\s*paragraph"
+      - field: style_name
+        operator: eq
+        value: "Normal"
+    confidence: 0.8
+
+  # ===== 兜底规则（最低优先级） =====
+  - id: fallback_paragraph
+    priority: 0
+    element_type: paragraph
+    description: "兜底规则：任何未匹配的段落都识别为正文"
+    match_strategy: any
+    conditions: []
+    confidence: 0.5
+
+metadata:
+  author: AITeam
+  created: "2026-05-12"
+  description: "识别 Heading 1-4, Normal, 列表, 代码块, 引用, 目录等常见元素类型"

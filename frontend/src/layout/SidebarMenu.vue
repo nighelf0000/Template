@@ -23,13 +23,17 @@
       <el-icon><View /></el-icon>
       <span>解析预览</span>
     </el-menu-item>
+    <el-menu-item index="/train-task">
+      <el-icon><List /></el-icon>
+      <span>模板训练</span>
+    </el-menu-item>
   </el-menu>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Document, Setting, Upload, View } from '@element-plus/icons-vue'
+import { Document, Setting, Upload, View, List } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const activeMenu = computed(() => {

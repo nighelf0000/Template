@@ -1,0 +1,218 @@
+# 学术论文文档结构识别规则集
+name: academic
+version: "1.0"
+description: 学术论文规则集，适用于毕业论文、期刊论文等学术文档
+
+rules:
+  # ===== 标题规则 =====
+  - id: heading_1
+    priority: 100
+    element_type: heading
+    level: 1
+    description: "一级标题（章标题）"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: eq
+        value: "heading 1"
+      - field: style_name
+        operator: eq
+        value: "标题 1"
+      - field: outline_level
+        operator: eq
+        value: 1
+    confidence: 0.95
+
+  - id: heading_2
+    priority: 99
+    element_type: heading
+    level: 2
+    description: "二级标题（节标题）"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: eq
+        value: "heading 2"
+      - field: style_name
+        operator: eq
+        value: "标题 2"
+      - field: outline_level
+        operator: eq
+        value: 2
+    confidence: 0.95
+
+  - id: heading_3
+    priority: 98
+    element_type: heading
+    level: 3
+    description: "三级标题"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: eq
+        value: "heading 3"
+      - field: style_name
+        operator: eq
+        value: "标题 3"
+      - field: outline_level
+        operator: eq
+        value: 3
+    confidence: 0.9
+
+  - id: heading_4
+    priority: 97
+    element_type: heading
+    level: 4
+    description: "四级标题"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: eq
+        value: "heading 4"
+      - field: style_name
+        operator: eq
+        value: "标题 4"
+    confidence: 0.85
+
+  # ===== 摘要 =====
+  - id: abstract
+    priority: 80
+    element_type: paragraph
+    description: "摘要段落"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^abstract|摘要"
+    confidence: 0.85
+
+  # ===== 关键词 =====
+  - id: keywords
+    priority: 79
+    element_type: paragraph
+    description: "关键词段落"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^keywords|关键词|关 键 词"
+    confidence: 0.8
+
+  # ===== 正文（学术） =====
+  - id: body_text
+    priority: 50
+    element_type: paragraph
+    description: "学术正文（首行缩进）"
+    match_strategy: all
+    conditions:
+      - field: indent_first_line
+        operator: gt
+        value: 15.0
+      - field: font_name
+        operator: in
+        value: ["宋体", "SimSun", "Times New Roman"]
+    confidence: 0.8
+
+  - id: body_normal
+    priority: 40
+    element_type: paragraph
+    description: "普通正文段落"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^normal|正文|body|default"
+      - field: style_name
+        operator: eq
+        value: "Normal"
+    confidence: 0.75
+
+  # ===== 参考文献 =====
+  - id: reference
+    priority: 30
+    element_type: paragraph
+    description: "参考文献条目"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^reference|bibliography|参考文献"
+    confidence: 0.8
+
+  # ===== 页眉页脚 =====
+  - id: header
+    priority: 20
+    element_type: header
+    description: "页眉样式"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^header|页眉"
+    confidence: 0.85
+
+  - id: footer
+    priority: 19
+    element_type: footer
+    description: "页脚样式"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^footer|页脚"
+    confidence: 0.85
+
+  # ===== 图/表标题 =====
+  - id: caption
+    priority: 25
+    element_type: caption
+    description: "图/表标题"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^caption|题注"
+    confidence: 0.85
+
+  # ===== 列表 =====
+  - id: list_ordered
+    priority: 35
+    element_type: list_ordered
+    description: "有序列表"
+    match_strategy: all
+    conditions:
+      - field: has_numbering
+        operator: eq
+        value: true
+      - field: numbering_format
+        operator: in
+        value: ["decimal", "lowerLetter", "upperLetter"]
+    confidence: 0.8
+
+  - id: list_unordered
+    priority: 34
+    element_type: list_unordered
+    description: "无序列表"
+    match_strategy: all
+    conditions:
+      - field: has_numbering
+        operator: eq
+        value: true
+      - field: numbering_format
+        operator: eq
+        value: "bullet"
+    confidence: 0.8
+
+  # ===== 兜底 =====
+  - id: fallback
+    priority: 0
+    element_type: paragraph
+    description: "兜底规则"
+    match_strategy: any
+    conditions: []
+    confidence: 0.4
+
+metadata:
+  author: AITeam
+  created: "2026-05-12"
+  description: "针对学术论文优化的规则集，支持摘要、关键词、参考文献等学术文档特有元素"

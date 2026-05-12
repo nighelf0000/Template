@@ -44,6 +44,14 @@ template:
     training-timeout-minutes: 10
     batch-size: 50
 
+  # 模板训练功能配置
+  train:
+    python-path: python                     # Python 解释器路径
+    timeout-minutes: 30                     # 训练超时时间
+    api-base-url: http://localhost:8080     # API 基地址
+    async: true                             # true=异步执行(默认)
+    internal-token: train-internal-token    # 内部回调认证 Token
+
 mybatis-plus:
   mapper-locations: classpath:mapper/*.xml
   type-aliases-package: com.template.entity

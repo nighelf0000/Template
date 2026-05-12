@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=64.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "doc-struct"
+version = "1.0.0"
+description = "Word 文档结构识别引擎"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "AITeam"},
+]
+
+dependencies = [
+    "python-docx>=0.8.11",
+    "lxml>=4.9",
+    "pyyaml>=6.0",
+    "click>=8.1",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "ruff>=0.1",
+]
+
+[project.scripts]
+doc-struct = "docstruct.cli.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["docstruct", "docstruct.*"]

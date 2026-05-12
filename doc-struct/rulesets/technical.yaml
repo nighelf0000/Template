@@ -1,0 +1,282 @@
+# 技术文档结构识别规则集
+name: technical
+version: "1.0"
+description: 技术文档规则集，适用于技术方案、设计文档、API 文档等技术类文档
+
+rules:
+  # ===== 标题规则（支持更多层级） =====
+  - id: heading_1
+    priority: 100
+    element_type: heading
+    level: 1
+    description: "一级标题"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^heading\\s*1|标题 1|heading\\s*1$"
+      - field: outline_level
+        operator: eq
+        value: 1
+    confidence: 0.95
+
+  - id: heading_2
+    priority: 99
+    element_type: heading
+    level: 2
+    description: "二级标题"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^heading\\s*2|标题 2"
+      - field: outline_level
+        operator: eq
+        value: 2
+    confidence: 0.95
+
+  - id: heading_3
+    priority: 98
+    element_type: heading
+    level: 3
+    description: "三级标题"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^heading\\s*3|标题 3"
+      - field: outline_level
+        operator: eq
+        value: 3
+    confidence: 0.93
+
+  - id: heading_4
+    priority: 97
+    element_type: heading
+    level: 4
+    description: "四级标题"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^heading\\s*4|标题 4"
+      - field: outline_level
+        operator: eq
+        value: 4
+    confidence: 0.9
+
+  - id: heading_5
+    priority: 96
+    element_type: heading
+    level: 5
+    description: "五级标题"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^heading\\s*5|标题 5"
+      - field: outline_level
+        operator: eq
+        value: 5
+    confidence: 0.85
+
+  - id: heading_6
+    priority: 95
+    element_type: heading
+    level: 6
+    description: "六级标题"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^heading\\s*6|标题 6"
+      - field: outline_level
+        operator: eq
+        value: 6
+    confidence: 0.8
+
+  # ===== 代码块（技术文档重点） =====
+  - id: code_block_mono
+    priority: 70
+    element_type: code_block
+    description: "等宽字体代码块"
+    match_strategy: any
+    conditions:
+      - field: font_name
+        operator: in
+        value: ["Courier New", "Consolas", "Source Code Pro", "JetBrains Mono",
+                 "Fira Code", "Monaco", "Menlo", "Droid Sans Mono",
+                 "DejaVu Sans Mono", "Ubuntu Mono", "SF Mono",
+                 "Inconsolata", "Operator Mono"]
+    confidence: 0.8
+
+  - id: code_block_style
+    priority: 69
+    element_type: code_block
+    description: "代码块样式名"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^(code|source\\s*code|html\\s*code|inline\\s*code|代码)"
+    confidence: 0.85
+
+  - id: code_block_indent
+    priority: 68
+    element_type: code_block
+    description: "缩进代码块（技术文档常见）"
+    match_strategy: all
+    conditions:
+      - field: indent_left
+        operator: gt
+        value: 40.0
+      - field: font_name
+        operator: in
+        value: ["Courier New", "Consolas"]
+    confidence: 0.7
+
+  # ===== 引用块 =====
+  - id: block_quote
+    priority: 60
+    element_type: block_quote
+    description: "引用块"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^(block\\s*quote|quote|intense\\s*quote|引用|note|tip|warning|caution)"
+      - field: indent_left
+        operator: gt
+        value: 35.0
+    confidence: 0.75
+
+  # ===== 表格标题 =====
+  - id: table_caption
+    priority: 55
+    element_type: caption
+    description: "表格标题"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^(table\\s*caption|caption|题注)"
+      - field: style_name
+        operator: contains
+        value: "Table"
+    confidence: 0.8
+
+  # ===== 图标题 =====
+  - id: figure_caption
+    priority: 54
+    element_type: caption
+    description: "图片标题"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^(figure\\s*caption|caption|题注)"
+      - field: style_name
+        operator: contains
+        value: "Figure"
+    confidence: 0.8
+
+  # ===== 列表 =====
+  - id: list_ordered
+    priority: 45
+    element_type: list_ordered
+    description: "有序列表"
+    match_strategy: all
+    conditions:
+      - field: has_numbering
+        operator: eq
+        value: true
+      - field: numbering_format
+        operator: in
+        value: ["decimal", "lowerLetter", "upperLetter", "lowerRoman", "upperRoman"]
+    confidence: 0.8
+
+  - id: list_unordered
+    priority: 44
+    element_type: list_unordered
+    description: "无序列表"
+    match_strategy: all
+    conditions:
+      - field: has_numbering
+        operator: eq
+        value: true
+      - field: numbering_format
+        operator: in
+        value: ["bullet", "hybridBullet"]
+    confidence: 0.8
+
+  - id: list_generic
+    priority: 43
+    element_type: list_unordered
+    description: "通用列表"
+    match_strategy: all
+    conditions:
+      - field: has_numbering
+        operator: eq
+        value: true
+    confidence: 0.55
+
+  # ===== 正文 =====
+  - id: body_paragraph
+    priority: 20
+    element_type: paragraph
+    description: "技术文档正文"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^normal|正文|body|default|技术正文"
+    confidence: 0.75
+
+  # ===== 目录 =====
+  - id: toc
+    priority: 15
+    element_type: toc
+    description: "目录"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^toc|table\\s+of\\s+contents|目录"
+    confidence: 0.85
+
+  # ===== 页眉页脚 =====
+  - id: header
+    priority: 10
+    element_type: header
+    description: "页眉"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^header|页眉"
+    confidence: 0.8
+
+  - id: footer
+    priority: 9
+    element_type: footer
+    description: "页脚"
+    match_strategy: any
+    conditions:
+      - field: style_name
+        operator: regex
+        value: "(?i)^footer|页脚"
+    confidence: 0.8
+
+  # ===== 兜底 =====
+  - id: fallback
+    priority: 0
+    element_type: paragraph
+    description: "兜底规则"
+    match_strategy: any
+    conditions: []
+    confidence: 0.4
+
+metadata:
+  author: AITeam
+  created: "2026-05-12"
+  description: "针对技术文档优化的规则集，支持 Heading 1-6、代码块（等宽字体检测）、引用块等"

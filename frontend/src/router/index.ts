@@ -36,6 +36,18 @@ const router = createRouter({
       name: 'ParsePreview',
       component: () => import('@/views/file/ParsePreview.vue'),
       meta: { title: '解析预览', menu: 'file' }
+    },
+    {
+      path: '/train-task',
+      name: 'TrainTask',
+      component: () => import('@/views/train/TrainTask.vue'),
+      meta: { title: '模板训练', menu: 'train' }
+    },
+    {
+      path: '/train-result/:id',
+      name: 'TrainResultDetail',
+      component: () => import('@/views/train/TrainResultDetail.vue'),
+      meta: { title: '训练结果详情', menu: 'train' }
     }
   ]
 })

@@ -148,3 +148,40 @@ export interface SmartMatchTestResult {
   ruleName?: string
   confidence: number
 }
+
+// ====== 模板训练相关类型 ======
+
+export interface TrainFileVO {
+  id: number
+  templateId: number
+  templateName?: string
+  originalName: string
+  originalSize: number
+  status: string
+  createdAt: string
+}
+
+export interface TrainTaskVO {
+  id: number
+  templateId: number
+  templateName?: string
+  taskName: string
+  status: string
+  progress: number
+  totalFiles: number
+  fileCount: number
+  parseRecordCount?: number
+  errorMessage?: string
+  startedAt?: string
+  completedAt?: string
+  createdAt: string
+  updatedAt: string
+  parseRecords?: ParseRecordSimpleVO[]
+}
+
+export interface ParseRecordSimpleVO {
+  id: number
+  sourceFile: string
+  status: string
+  parsedAt: string
+}
