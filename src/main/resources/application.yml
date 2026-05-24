@@ -48,7 +48,7 @@ template:
   train:
     python-path: python                     # Python 解释器路径
     timeout-minutes: 30                     # 训练超时时间
-    api-base-url: http://localhost:8080     # API 基地址
+    api-base-url: http://localhost:3000     # API 基地址
     async: true                             # true=异步执行(默认)
     internal-token: train-internal-token    # 内部回调认证 Token
 

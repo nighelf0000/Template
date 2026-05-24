@@ -81,8 +81,14 @@ class HierarchyBuilder:
         # 维护一个标题栈：(level, parent_element)
         heading_stack: List[DocumentElement] = [parent]
 
+        # 非 body 来源元素类型（直接挂到根节点，不参与标题层级嵌套）
+        _NON_BODY_TYPES = {"header", "footer", "footnote", "endnote", "comment"}
+
         for elem in elements:
-            if elem.type == "heading":
+            if elem.type in _NON_BODY_TYPES:
+                # 非 body 元素：直接挂在根节点下，不参与标题层级
+                parent.children.append(elem)
+            elif elem.type == "heading":
                 level = elem.level or 1
 
                 # 弹出比当前标题级别 >= 的栈顶（相同或更大 level 的标题）

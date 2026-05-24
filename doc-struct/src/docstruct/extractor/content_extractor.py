@@ -28,25 +28,27 @@ class ContentExtractor:
     def extract(
         self,
         element_type: str,
-        paragraph: docx.text.paragraph.Paragraph,
+        paragraph: Optional[docx.text.paragraph.Paragraph],
         index: int,
     ) -> ElementContent:
         """提取段落的内容。
 
         Args:
             element_type: 元素类型。
-            paragraph: 段落对象。
+            paragraph: 段落对象（可为 None，用于 XML 解析来源）。
             index: 段落序号。
 
         Returns:
             提取的结构化内容。
         """
-        text = paragraph.text.strip()
+        text = paragraph.text.strip() if paragraph else ""
 
         if element_type in ("heading", "paragraph", "caption", "block_quote"):
             return ElementContent(text=text)
 
         elif element_type in ("list_ordered", "list_unordered"):
+            if paragraph is None:
+                return ElementContent(text=text)
             items = self._list_extractor.extract(paragraph)
             return ElementContent(
                 text=text,
@@ -65,8 +67,52 @@ class ContentExtractor:
         elif element_type == "section_break":
             return ElementContent(text="")
 
+        elif element_type in ("header", "footer"):
+            # header/footer 保留 run 级富文本格式
+            return ElementContent(
+                text=text,
+                rich_text=self._extract_rich_text(paragraph) if paragraph else None,
+            )
+
+        elif element_type in ("footnote", "endnote", "comment"):
+            return ElementContent(text=text)
+
         else:
             return ElementContent(text=text)
+
+    @staticmethod
+    def _extract_rich_text(
+        paragraph: docx.text.paragraph.Paragraph,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """从段落提取 run 级富文本格式信息。
+
+        Args:
+            paragraph: python-docx Paragraph 对象。
+
+        Returns:
+            run 级格式信息列表，每个 run 包含文本及其格式属性。
+        """
+        if not paragraph:
+            return None
+
+        runs: List[Dict[str, Any]] = []
+        for run in paragraph.runs:
+            run_info: Dict[str, Any] = {"text": run.text}
+
+            if run.bold is not None:
+                run_info["bold"] = run.bold
+            if run.italic is not None:
+                run_info["italic"] = run.italic
+            if run.underline is not None:
+                run_info["underline"] = run.underline
+            if run.font.name:
+                run_info["font_name"] = run.font.name
+            if run.font.size:
+                run_info["font_size"] = str(run.font.size)
+
+            runs.append(run_info)
+
+        return runs if runs else None
 
     def extract_table(self, table: docx.table.Table) -> ElementContent:
         """提取表格内容。

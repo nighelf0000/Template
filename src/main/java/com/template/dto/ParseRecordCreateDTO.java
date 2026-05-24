@@ -20,14 +20,14 @@ public class ParseRecordCreateDTO {
     private String status;
     private String errorMessage;
 
-    // 完整的 StructureTree JSON 字符串
-    private String structureTree;
+    // 完整的 StructureTree（JSON 对象，Python 端直接传 dict）
+    private Object structureTree;
 
-    // 文档级元数据 JSON 字符串
-    private String documentMeta;
+    // 文档级元数据（JSON 对象）
+    private Object documentMeta;
 
-    // 元素统计摘要 JSON 字符串
-    private String elementSummary;
+    // 元素统计摘要（JSON 对象）
+    private Object elementSummary;
 
     private String tags;
 }

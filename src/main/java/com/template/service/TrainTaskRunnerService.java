@@ -1,8 +1,8 @@
 package com.template.service;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -11,11 +11,11 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class TrainTaskRunnerService {
 
     @Value("${template.train.python-path:python}")
@@ -31,6 +31,10 @@ public class TrainTaskRunnerService {
     private String internalToken;
 
     private final TrainTaskService trainTaskService;
+
+    public TrainTaskRunnerService(@Lazy TrainTaskService trainTaskService) {
+        this.trainTaskService = trainTaskService;
+    }
 
     /**
      * 调用 Python doc-struct 引擎执行批量训练。
@@ -56,6 +60,9 @@ public class TrainTaskRunnerService {
             log.info("执行命令: {}", String.join(" ", cmd));
 
             ProcessBuilder pb = new ProcessBuilder(cmd);
+            Map<String, String> env = pb.environment();
+            String projectRoot = System.getProperty("user.dir");
+            env.put("PYTHONPATH", projectRoot + "\\doc-struct\\src");
             Process process = pb.start();
 
             // 异步读取 stdout/stderr，防止管道缓冲区满导致死锁

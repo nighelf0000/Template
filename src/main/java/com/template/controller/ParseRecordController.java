@@ -3,10 +3,15 @@ package com.template.controller;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.template.dto.ApiResponse;
 import com.template.dto.ParseRecordCreateDTO;
+import com.template.dto.ParseRecordDetailVO;
 import com.template.dto.ParseRecordVO;
 import com.template.service.ParseRecordService;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
+import java.util.Map;
+
 import org.springframework.web.bind.annotation.*;
 
 @Slf4j
@@ -66,6 +71,36 @@ public class ParseRecordController {
             return ApiResponse.fail(404, "记录不存在");
         }
         return ApiResponse.ok(vo);
+    }
+
+    /**
+     * 获取解析记录完整详情（含结构树、文档元数据、元素统计）
+     * GET /api/parse-record/{id}/detail
+     */
+    @GetMapping("/{id}/detail")
+    public ApiResponse<ParseRecordDetailVO> getDetail(@PathVariable Long id) {
+        log.info("获取解析记录完整详情: id={}", id);
+        ParseRecordDetailVO vo = parseRecordService.getDetail(id);
+        if (vo == null) {
+            return ApiResponse.fail(404, "记录不存在");
+        }
+        return ApiResponse.ok(vo);
+    }
+
+    /**
+     * 更新解析记录的结构树（供 Python 引擎在元素拆解后更新使用）
+     * PUT /api/parse-record/{id}/structure-tree
+     */
+    @PutMapping("/{id}/structure-tree")
+    public ApiResponse<Void> updateStructureTree(@PathVariable Long id,
+                                                  @RequestBody Map<String, Object> body) {
+        log.info("更新结构树: id={}", id);
+        try {
+            parseRecordService.updateStructureTree(id, body.get("structureTree"));
+            return ApiResponse.ok(null);
+        } catch (IllegalArgumentException e) {
+            return ApiResponse.fail(404, e.getMessage());
+        }
     }
 
     /**

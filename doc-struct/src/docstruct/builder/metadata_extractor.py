@@ -44,6 +44,14 @@ class MetadataExtractor:
         image_count = sum(1 for e in elements if e.type == "image")
         meta.image_count = image_count
 
+        # 非 body 来源元素统计
+        non_body_sources = {"header", "footer", "footnote", "endnote", "comment"}
+        supplement_count = sum(
+            1 for e in elements
+            if e.metadata and e.metadata.source in non_body_sources
+        )
+        meta.supplement_count = supplement_count
+
         # 字数统计
         total_words = 0
         for elem in elements:

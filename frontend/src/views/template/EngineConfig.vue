@@ -29,18 +29,13 @@
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center">
           <div style="display: flex; align-items: center; gap: 16px">
-            <span>{{ matchMode === 'REGEX' ? '正则表达式配置列表' : '智能匹配规则列表' }}</span>
-            <el-radio-group v-model="matchMode" size="small">
-              <el-radio-button value="REGEX">正则匹配</el-radio-button>
-              <el-radio-button value="SMART">智能匹配</el-radio-button>
-            </el-radio-group>
+            <span>正则表达式配置列表</span>
           </div>
-          <el-button v-if="matchMode === 'REGEX'" type="primary" size="small" @click="openCreateDialog">新增配置</el-button>
+          <el-button type="primary" size="small" @click="openCreateDialog">新增配置</el-button>
         </div>
       </template>
 
-      <template v-if="matchMode === 'REGEX'">
-        <el-table :data="configList" stripe style="width: 100%">
+      <el-table :data="configList" stripe style="width: 100%">
           <el-table-column prop="configName" label="名称" min-width="120" />
           <el-table-column prop="pattern" label="正则表达式" min-width="200">
             <template #default="{ row }">
@@ -85,10 +80,6 @@
         </div>
 
         <el-empty v-if="!configList.length" description="暂无引擎配置，请点击上方「新增配置」按钮添加" />
-      </template>
-
-      <!-- 智能匹配面板 -->
-      <SmartMatchPanel v-if="matchMode === 'SMART'" :selected-template-id="selectedTemplateId" />
     </el-card>
 
     <!-- 新增/编辑对话框 -->
@@ -142,7 +133,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -154,7 +145,6 @@ import {
   getRuleList
 } from '@/api/template'
 import type { TemplateConfig, EngineConfig, TemplateRule } from '@/types/api'
-import SmartMatchPanel from './SmartMatchPanel.vue'
 
 const route = useRoute()
 const loading = ref(false)
@@ -170,7 +160,6 @@ const dialogVisible = ref(false)
 const isEditing = ref(false)
 const editingId = ref<number | null>(null)
 const formRef = ref<any>(null)
-const matchMode = ref<'REGEX' | 'SMART'>('REGEX')
 
 const defaultForm = (): any => ({
   configName: '',

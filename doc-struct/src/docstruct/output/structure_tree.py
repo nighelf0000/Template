@@ -126,6 +126,7 @@ class DocumentMeta:
     title: Optional[str] = None
     word_count: int = 0
     language: Optional[str] = None
+    supplement_count: int = 0  # 非 body 来源元素总数
 
     extra: Dict[str, Any] = field(default_factory=dict)
 
@@ -145,6 +146,7 @@ class DocumentMeta:
         if self.title is not None:
             d["title"] = self.title
         d["word_count"] = self.word_count
+        d["supplement_count"] = self.supplement_count
         if self.language is not None:
             d["language"] = self.language
         d.update(self.extra)

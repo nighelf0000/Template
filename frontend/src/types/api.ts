@@ -185,3 +185,90 @@ export interface ParseRecordSimpleVO {
   status: string
   parsedAt: string
 }
+
+// ====== 解析记录详情类型 ======
+
+export interface ParseRecordDetailVO {
+  id: number
+  templateId: number
+  templateName?: string
+  sourceFile: string
+  status: string
+  parsedAt: string
+  engineVersion?: string
+  rulesetName?: string
+  processingTimeMs?: number
+  structureTree?: any
+  documentMeta?: any
+  elementSummary?: any
+}
+
+// ====== 解析元素类型 ======
+
+export interface ParseElementVO {
+  id: number
+  recordId: number
+  elementId: string
+  elementType: string
+  level?: number
+  contentText?: string
+  confidence: number
+  parentElementId?: string
+  sortOrder: number
+  metadata?: any
+  styleFeatures?: string
+}
+
+export interface ElementTypeCountVO {
+  elementType: string
+  count: number
+}
+
+// ====== 差异对比类型 ======
+
+export interface DiffChangeVO {
+  changeType: 'added' | 'removed' | 'changed' | 'type_changed' | 'unchanged'
+  elementId: string
+  elementType?: string
+  elementTypeA?: string
+  elementTypeB?: string
+  contentText?: string
+  contentA?: string
+  contentB?: string
+  confidence?: number
+  confidenceA?: number
+  confidenceB?: number
+  levelA?: number
+  levelB?: number
+}
+
+export interface ParseDiffReportVO {
+  id: number
+  diffType: 'TASK' | 'STANDARD'
+  summary: {
+    totalA: number
+    totalB: number
+    added: number
+    removed: number
+    changed: number
+    unchanged: number
+    accuracy?: number
+    recall?: number
+    f1Score?: number
+  }
+  structuralChanges: DiffChangeVO[]
+  statisticsDiff: any
+  createdAt: string
+}
+
+// ====== 标准答案类型 ======
+
+export interface ParseStandardAnswerVO {
+  id: number
+  templateId: number
+  sourceFile: string
+  answerName: string
+  description?: string
+  elementSummary?: any
+  createdAt: string
+}

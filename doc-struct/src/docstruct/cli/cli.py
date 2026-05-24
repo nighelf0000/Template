@@ -94,7 +94,7 @@ def main(
 
     # 单文件模式
     if not input_file:
-        click.echo(ctx.get_help())
+        click.echo(click.get_current_context().get_help())
         sys.exit(EXIT_SUCCESS)
 
     try:

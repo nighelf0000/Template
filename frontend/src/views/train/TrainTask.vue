@@ -33,117 +33,124 @@
       </div>
     </div>
 
-    <!-- 主内容区：两栏布局 -->
+    <!-- 主内容区 -->
     <div class="page-body">
-      <!-- 左侧：训练任务列表 -->
-      <div class="left-panel">
-        <div class="panel-title">训练任务</div>
-        <div class="task-list">
-          <div
-            v-for="task in taskList"
-            :key="task.id"
-            class="task-item"
-            :class="{ active: selectedTaskId === task.id }"
-            @click="selectTask(task)"
-          >
-            <div class="task-item-header">
-              <span class="task-name">{{ task.taskName }}</span>
-              <el-tag :type="taskStatusTag(task.status)" size="small">
-                {{ taskStatusText(task.status) }}
+      <!-- 上方：训练文件列表 -->
+      <div class="file-list-panel">
+        <div class="panel-title">训练文件列表</div>
+        <el-table :data="trainFileList" stripe size="small" style="width: 100%" max-height="200" v-loading="fileListLoading">
+          <el-table-column prop="originalName" label="文件名" min-width="200" show-overflow-tooltip />
+          <el-table-column prop="originalSize" label="大小" width="100" align="center">
+            <template #default="{ row }">
+              {{ formatFileSize(row.originalSize) }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="status" label="状态" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.status === 'UPLOADED' ? 'success' : 'info'" size="small">
+                {{ row.status === 'UPLOADED' ? '已上传' : row.status }}
               </el-tag>
-            </div>
-            <div class="task-item-info">
-              <span v-if="task.status === 'RUNNING'" class="task-progress">
-                进度 {{ task.progress || 0 }}%
-              </span>
-              <span class="task-time">{{ task.createdAt }}</span>
-            </div>
-            <el-progress
-              v-if="task.status === 'RUNNING'"
-              :percentage="task.progress || 0"
-              :stroke-width="4"
-              style="margin-top: 4px"
-            />
-          </div>
-          <el-empty v-if="!taskList.length" description="暂无训练任务" :image-size="40" />
-        </div>
-        <!-- 底部分页 -->
-        <div class="pagination-wrapper" v-if="taskTotal > taskPageSize">
-          <el-pagination
-            v-model:current-page="taskPage"
-            :page-size="taskPageSize"
-            :total="taskTotal"
-            layout="prev, pager, next"
-            small
-            @current-change="loadTasks"
-          />
-        </div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="createdAt" label="上传时间" width="160" />
+          <el-table-column label="操作" width="100" align="center" fixed="right">
+            <template #default="{ row }">
+              <el-button size="small" text type="danger" @click="handleDeleteFile(row)">
+                删除
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-if="!trainFileList.length" description="暂无训练文件" :image-size="40" />
       </div>
 
-      <!-- 右侧：任务详情 -->
-      <div class="right-panel">
-        <template v-if="selectedTask">
-          <!-- 基本信息区域 -->
-          <div class="detail-section">
-            <div class="section-title">基本信息</div>
-            <el-descriptions :column="2" size="small" border>
-              <el-descriptions-item label="任务名称">{{ selectedTask.taskName }}</el-descriptions-item>
-              <el-descriptions-item label="状态">
-                <el-tag :type="taskStatusTag(selectedTask.status)" size="small">
-                  {{ taskStatusText(selectedTask.status) }}
+      <!-- 下方：训练任务（两栏布局） -->
+      <div class="task-section">
+        <!-- 左侧：训练任务列表 -->
+        <div class="left-panel">
+          <div class="panel-title">训练任务</div>
+          <div class="task-list">
+            <div
+              v-for="task in taskList"
+              :key="task.id"
+              class="task-item"
+              :class="{ active: selectedTaskId === task.id }"
+              @click="selectTask(task)"
+            >
+              <div class="task-item-header">
+                <span class="task-name">{{ task.taskName }}</span>
+                <el-tag :type="taskStatusTag(task.status)" size="small">
+                  {{ taskStatusText(task.status) }}
                 </el-tag>
-              </el-descriptions-item>
-              <el-descriptions-item label="模板ID">{{ selectedTask.templateId }}</el-descriptions-item>
-              <el-descriptions-item label="进度">
-                <el-progress
-                  :percentage="selectedTask.status === 'SUCCESS' ? 100 : (selectedTask.progress || 0)"
-                  :stroke-width="12"
-                  style="width: 160px"
-                />
-              </el-descriptions-item>
-              <el-descriptions-item label="总文件数">{{ selectedTask.totalFiles }}</el-descriptions-item>
-              <el-descriptions-item label="已处理">{{ selectedTask.fileCount }}</el-descriptions-item>
-              <el-descriptions-item label="开始时间">{{ selectedTask.startedAt || '-' }}</el-descriptions-item>
-              <el-descriptions-item label="完成时间">{{ selectedTask.completedAt || '-' }}</el-descriptions-item>
-              <el-descriptions-item v-if="selectedTask.errorMessage" label="错误信息" :span="2">
-                <span style="color: #f56c6c">{{ selectedTask.errorMessage }}</span>
-              </el-descriptions-item>
-            </el-descriptions>
+              </div>
+              <div class="task-item-info">
+                <span v-if="task.status === 'RUNNING'" class="task-progress">
+                  进度 {{ task.progress || 0 }}%
+                </span>
+                <span class="task-time">{{ task.createdAt }}</span>
+              </div>
+              <el-progress
+                v-if="task.status === 'RUNNING'"
+                :percentage="task.progress || 0"
+                :stroke-width="4"
+                style="margin-top: 4px"
+              />
+            </div>
+            <el-empty v-if="!taskList.length" description="暂无训练任务" :image-size="40" />
           </div>
+          <!-- 底部分页 -->
+          <div class="pagination-wrapper" v-if="taskTotal > taskPageSize">
+            <el-pagination
+              v-model:current-page="taskPage"
+              :page-size="taskPageSize"
+              :total="taskTotal"
+              layout="prev, pager, next"
+              small
+              @current-change="loadTasks"
+            />
+          </div>
+        </div>
 
-          <!-- 文件列表/识别结果区域 -->
-          <div class="detail-section">
-            <div class="section-title">训练文件列表</div>
-            <el-table :data="trainFileList" stripe size="small" style="width: 100%" max-height="300" v-loading="fileListLoading">
-              <el-table-column prop="originalName" label="文件名" min-width="200" show-overflow-tooltip />
-              <el-table-column prop="originalSize" label="大小" width="100" align="center">
-                <template #default="{ row }">
-                  {{ formatFileSize(row.originalSize) }}
-                </template>
-              </el-table-column>
-              <el-table-column prop="status" label="状态" width="100" align="center">
-                <template #default="{ row }">
-                  <el-tag :type="row.status === 'UPLOADED' ? 'success' : 'info'" size="small">
-                    {{ row.status === 'UPLOADED' ? '已上传' : row.status }}
+        <!-- 右侧：任务详情 -->
+        <div class="right-panel">
+          <template v-if="selectedTask">
+            <div class="detail-section">
+              <div class="section-title">基本信息</div>
+              <el-descriptions :column="2" size="small" border>
+                <el-descriptions-item label="任务名称">{{ selectedTask.taskName }}</el-descriptions-item>
+                <el-descriptions-item label="状态">
+                  <el-tag :type="taskStatusTag(selectedTask.status)" size="small">
+                    {{ taskStatusText(selectedTask.status) }}
                   </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column prop="createdAt" label="上传时间" width="160" />
-              <el-table-column label="操作" width="100" align="center" fixed="right">
-                <template #default="{ row }">
-                  <el-button size="small" text type="danger" @click="handleDeleteFile(row)">
-                    删除
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-            <el-empty v-if="!trainFileList.length" description="暂无训练文件" :image-size="40" />
-          </div>
-        </template>
+                </el-descriptions-item>
+                <el-descriptions-item label="模板ID">{{ selectedTask.templateId }}</el-descriptions-item>
+                <el-descriptions-item label="进度">
+                  <el-progress
+                    :percentage="selectedTask.status === 'SUCCESS' ? 100 : (selectedTask.progress || 0)"
+                    :stroke-width="12"
+                    style="width: 160px"
+                  />
+                </el-descriptions-item>
+                <el-descriptions-item label="总文件数">{{ selectedTask.totalFiles }}</el-descriptions-item>
+                <el-descriptions-item label="已处理">{{ selectedTask.fileCount }}</el-descriptions-item>
+                <el-descriptions-item label="开始时间">{{ selectedTask.startedAt || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="完成时间">{{ selectedTask.completedAt || '-' }}</el-descriptions-item>
+                <el-descriptions-item v-if="selectedTask.errorMessage" label="错误信息" :span="2">
+                  <span style="color: #f56c6c">{{ selectedTask.errorMessage }}</span>
+                </el-descriptions-item>
+              </el-descriptions>
+              <div style="margin-top:12px" v-if="selectedTask.status === 'SUCCESS'">
+                <el-button type="primary" @click="$router.push(`/train-result/${selectedTask.id}`)">
+                  <el-icon><View /></el-icon>
+                  查看训练结果
+                </el-button>
+              </div>
+            </div>
+          </template>
 
-        <!-- 未选中任务时的提示 -->
-        <div v-else class="empty-tip">
-          <el-empty description="请从左侧选择一个训练任务" :image-size="60" />
+          <div v-else class="empty-tip">
+            <el-empty description="请从左侧选择一个训练任务" :image-size="60" />
+          </div>
         </div>
       </div>
     </div>
@@ -161,7 +168,7 @@
         multiple
         :auto-upload="false"
         accept=".docx"
-        :file-list="uploadFileList"
+        v-model:file-list="uploadFileList"
         :on-change="handleFileChange"
         :limit="20"
       >
@@ -184,7 +191,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, VideoPlay, Refresh, UploadFilled } from '@element-plus/icons-vue'
+import { Upload, VideoPlay, Refresh, UploadFilled, View } from '@element-plus/icons-vue'
 import { getTemplateList } from '@/api/template'
 import {
   uploadTrainFile,
@@ -329,12 +336,12 @@ function handleUpload() {
   uploadDialogVisible.value = true
 }
 
-function handleFileChange(uploadFile: any) {
+function handleFileChange(uploadFile: any, uploadFiles: any[]) {
   // 校验文件格式
   const name = uploadFile.name || ''
   if (!name.toLowerCase().endsWith('.docx')) {
     ElMessage.warning('仅支持 .docx 格式文件')
-    uploadRef.value?.handleRemove(uploadFile)
+    uploadFileList.value = uploadFiles.filter((f: any) => f.uid !== uploadFile.uid)
     return
   }
 }
@@ -344,7 +351,7 @@ async function submitUpload() {
     ElMessage.warning('请先选择模板')
     return
   }
-  const files = uploadRef.value?.uploadFiles || []
+  const files = uploadFileList.value
   if (files.length === 0) {
     ElMessage.warning('请选择要上传的文件')
     return
@@ -482,6 +489,20 @@ onUnmounted(() => {
 }
 
 .page-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+.file-list-panel {
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.task-section {
   flex: 1;
   display: flex;
   gap: 16px;
